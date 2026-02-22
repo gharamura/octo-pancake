@@ -47,6 +47,7 @@ export interface TransactionRow {
   currency: string;
   recipient: string | null;
   notes: string | null;
+  transferId: string | null;
   accountName: string | null;
   coaName: string | null;
 }

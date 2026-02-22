@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   transactions,
@@ -18,6 +18,7 @@ export type TransactionRow = {
   currency: string;
   recipient: string | null;
   notes: string | null;
+  transferId: string | null;
   createdAt: Date | string;
   updatedAt: Date | string;
   accountName: string | null;
@@ -36,6 +37,7 @@ export class TransactionRepository {
       currency:        transactions.currency,
       recipient:       transactions.recipient,
       notes:           transactions.notes,
+      transferId:      transactions.transferId,
       createdAt:       transactions.createdAt,
       updatedAt:       transactions.updatedAt,
       accountName:     financialAccounts.name,
@@ -88,6 +90,24 @@ export class TransactionRepository {
       .where(eq(transactions.id, id))
       .returning({ id: transactions.id });
     return result.length > 0;
+  }
+
+  /** Link two transfer legs together by stamping them with a shared transferId. */
+  async linkTransactions(id1: string, id2: string): Promise<string> {
+    const transferId = crypto.randomUUID();
+    await db
+      .update(transactions)
+      .set({ transferId })
+      .where(inArray(transactions.id, [id1, id2]));
+    return transferId;
+  }
+
+  /** Unlink both legs of a transfer (set transferId → null). */
+  async unlinkTransfer(transferId: string): Promise<void> {
+    await db
+      .update(transactions)
+      .set({ transferId: null })
+      .where(eq(transactions.transferId, transferId));
   }
 }
 
