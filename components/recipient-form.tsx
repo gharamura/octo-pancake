@@ -59,13 +59,28 @@ export function RecipientForm({ record, onSuccess }: RecipientFormProps) {
   const [addingCoa, setAddingCoa] = useState(false);
   const [coaError,  setCoaError]  = useState<string | null>(null);
 
+  // Merge (edit only)
+  const [recipientsList, setRecipientsList] = useState<{ id: string; name: string }[]>([]);
+  const [mergeTargetId,  setMergeTargetId]  = useState("");
+  const [mergeOpen,      setMergeOpen]      = useState(false);
+  const [confirmMerge,   setConfirmMerge]   = useState(false);
+  const [merging,        setMerging]        = useState(false);
+  const [mergeError,     setMergeError]     = useState<string | null>(null);
+
   useEffect(() => {
     if (!isEdit) return;
-    fetch("/api/coa")
-      .then((r) => r.json())
-      .then(setCoaList)
+    Promise.all([
+      fetch("/api/coa").then((r) => r.json()),
+      fetch("/api/recipients").then((r) => r.json()),
+    ])
+      .then(([coa, recs]) => {
+        setCoaList(coa);
+        setRecipientsList(
+          (recs as { id: string; name: string }[]).filter((r) => r.id !== record!.id)
+        );
+      })
       .catch(() => {});
-  }, [isEdit]);
+  }, [isEdit, record]);
 
   // ---------------------------------------------------------------------------
   // Basic info submit
@@ -221,8 +236,37 @@ export function RecipientForm({ record, onSuccess }: RecipientFormProps) {
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Merge
+  // ---------------------------------------------------------------------------
+
+  async function handleMerge() {
+    if (!mergeTargetId) return;
+    setMerging(true);
+    setMergeError(null);
+    try {
+      const res = await fetch(`/api/recipients/${record!.id}/merge`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targetId: mergeTargetId }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setMergeError(data.error ?? "Could not merge recipients.");
+        setConfirmMerge(false);
+        return;
+      }
+      onSuccess();
+    } catch {
+      setMergeError("Something went wrong.");
+    } finally {
+      setMerging(false);
+    }
+  }
+
   const selectedCoa = coaList.find((c) => c.code === newCoaCode) ?? null;
   const usedCoaCodes = new Set(coas.map((c) => c.coaCode));
+  const mergeTarget = recipientsList.find((r) => r.id === mergeTargetId) ?? null;
 
   // ---------------------------------------------------------------------------
   // Render
@@ -458,6 +502,98 @@ export function RecipientForm({ record, onSuccess }: RecipientFormProps) {
             </Button>
           </div>
           {coaError && <p className="text-xs text-destructive">{coaError}</p>}
+        </div>
+      )}
+
+      {/* ── Merge (edit only) ── */}
+      {isEdit && (
+        <div className="space-y-3 border-t pt-5">
+          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+            Merge into Another Recipient
+          </p>
+          <p className="text-xs text-muted-foreground">
+            All aliases and COA links will be moved to the selected recipient, then this one will be deleted.
+          </p>
+
+          <Popover open={mergeOpen} onOpenChange={setMergeOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                role="combobox"
+                className="w-full justify-between font-normal text-sm"
+              >
+                <span className="truncate">
+                  {mergeTarget ? mergeTarget.name : "Select recipient…"}
+                </span>
+                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+              <Command>
+                <CommandInput placeholder="Search recipient…" />
+                <CommandList>
+                  <CommandEmpty>No recipient found.</CommandEmpty>
+                  <CommandGroup>
+                    {recipientsList.map((r) => (
+                      <CommandItem
+                        key={r.id}
+                        value={r.name}
+                        onSelect={() => {
+                          setMergeTargetId(r.id);
+                          setConfirmMerge(false);
+                          setMergeOpen(false);
+                        }}
+                      >
+                        <Check className={`mr-2 h-4 w-4 ${mergeTargetId === r.id ? "opacity-100" : "opacity-0"}`} />
+                        {r.name}
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          </Popover>
+
+          {mergeTargetId && (
+            confirmMerge ? (
+              <div className="space-y-2">
+                <p className="text-xs text-destructive">
+                  This will delete <strong>{record!.name}</strong> and move everything to <strong>{mergeTarget?.name}</strong>. This cannot be undone.
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="sm"
+                    disabled={merging}
+                    onClick={handleMerge}
+                  >
+                    {merging ? "Merging…" : "Confirm Merge"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setConfirmMerge(false)}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                onClick={() => setConfirmMerge(true)}
+              >
+                Merge
+              </Button>
+            )
+          )}
+
+          {mergeError && <p className="text-xs text-destructive">{mergeError}</p>}
         </div>
       )}
     </div>

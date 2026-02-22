@@ -93,7 +93,10 @@ export class RecipientRepository {
   }
 
   async create(data: NewRecipient): Promise<Recipient> {
-    const [row] = await db.insert(recipients).values(data).returning();
+    const [row] = await db
+      .insert(recipients)
+      .values({ ...data, name: data.name.toUpperCase() })
+      .returning();
     return row;
   }
 
@@ -103,7 +106,7 @@ export class RecipientRepository {
   ): Promise<Recipient | null> {
     const [row] = await db
       .update(recipients)
-      .set(data)
+      .set({ ...data, ...(data.name !== undefined && { name: data.name.toUpperCase() }) })
       .where(eq(recipients.id, id))
       .returning();
     return row ?? null;
@@ -172,6 +175,42 @@ export class RecipientRepository {
       .where(eq(recipientCoa.id, coaLinkId))
       .returning({ id: recipientCoa.id });
     return result.length > 0;
+  }
+
+  async merge(sourceId: string, targetId: string): Promise<void> {
+    // 1. Move all aliases to target (alias PK is globally unique — no conflicts)
+    await db
+      .update(recipientAliases)
+      .set({ recipientId: targetId })
+      .where(eq(recipientAliases.recipientId, sourceId));
+
+    // 2. Handle COA links
+    const [sourceCoas, targetCoas] = await Promise.all([
+      db.select().from(recipientCoa).where(eq(recipientCoa.recipientId, sourceId)),
+      db.select().from(recipientCoa).where(eq(recipientCoa.recipientId, targetId)),
+    ]);
+
+    const targetCoaCodes  = new Set(targetCoas.map((c) => c.coaCode));
+    const targetHasPrimary = targetCoas.some((c) => c.isPrimary);
+
+    const duplicates = sourceCoas.filter((c) =>  targetCoaCodes.has(c.coaCode));
+    const toMove     = sourceCoas.filter((c) => !targetCoaCodes.has(c.coaCode));
+
+    if (duplicates.length > 0) {
+      await db
+        .delete(recipientCoa)
+        .where(inArray(recipientCoa.id, duplicates.map((c) => c.id)));
+    }
+
+    for (const coa of toMove) {
+      await db
+        .update(recipientCoa)
+        .set({ recipientId: targetId, isPrimary: !targetHasPrimary && coa.isPrimary })
+        .where(eq(recipientCoa.id, coa.id));
+    }
+
+    // 3. Delete source — cascade removes any leftover aliases/coa rows
+    await db.delete(recipients).where(eq(recipients.id, sourceId));
   }
 
   private async clearPrimary(recipientId: string): Promise<void> {
