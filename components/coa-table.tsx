@@ -15,8 +15,17 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import { CoaForm } from "@/components/coa-form";
 import { type CoaAccount, type AccountType } from "@/lib/db/schema";
-import { useEffect, useMemo, useState } from "react";
+import { Pencil, Plus } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 // ---------------------------------------------------------------------------
 // Types & constants
@@ -55,48 +64,6 @@ const TYPE_STYLES: Record<AccountType, { badge: string; pillActive: string; pill
 };
 
 // ---------------------------------------------------------------------------
-// Column definitions
-// ---------------------------------------------------------------------------
-
-const columns: ColumnDef<CoaRow>[] = [
-  {
-    accessorKey: "code",
-    header: "Code",
-    cell: ({ row }) => (
-      <span className="font-mono text-xs text-muted-foreground">
-        {row.getValue("code")}
-      </span>
-    ),
-  },
-  {
-    accessorKey: "name",
-    header: "Name",
-    cell: ({ row }) => {
-      const depth = row.original.depth;
-      const name: string = row.getValue("name");
-      return (
-        <span style={{ paddingLeft: `${depth * 1.25}rem` }}>
-          {depth === 0 ? <strong>{name}</strong> : name}
-        </span>
-      );
-    },
-  },
-  {
-    accessorKey: "type",
-    header: "Type",
-    cell: ({ row }) => {
-      const type = row.getValue("type") as AccountType;
-      const styles = TYPE_STYLES[type];
-      return (
-        <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${styles.badge}`}>
-          {type}
-        </span>
-      );
-    },
-  },
-];
-
-// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -112,12 +79,20 @@ function buildDepthMap(accounts: CoaAccount[]): Map<string, number> {
 // Component
 // ---------------------------------------------------------------------------
 
+interface SheetState {
+  open: boolean;
+  mode: "create" | "edit";
+  account?: CoaAccount;
+}
+
 export function CoaTable() {
   const [accounts, setAccounts] = useState<CoaAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedTypes, setSelectedTypes] = useState<AccountType[]>(TYPES);
+  const [sheet, setSheet] = useState<SheetState>({ open: false, mode: "create" });
 
-  useEffect(() => {
+  const fetchAccounts = useCallback(() => {
+    setLoading(true);
     fetch("/api/coa")
       .then((r) => r.json())
       .then((data: CoaAccount[]) => {
@@ -126,6 +101,81 @@ export function CoaTable() {
       })
       .catch(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    fetchAccounts();
+  }, [fetchAccounts]);
+
+  const openCreate = useCallback(() => {
+    setSheet({ open: true, mode: "create" });
+  }, []);
+
+  const openEdit = useCallback((account: CoaAccount) => {
+    setSheet({ open: true, mode: "edit", account });
+  }, []);
+
+  const closeSheet = useCallback(() => {
+    setSheet((s) => ({ ...s, open: false }));
+  }, []);
+
+  const handleFormSuccess = useCallback(() => {
+    closeSheet();
+    fetchAccounts();
+  }, [closeSheet, fetchAccounts]);
+
+  const columns = useMemo<ColumnDef<CoaRow>[]>(
+    () => [
+      {
+        accessorKey: "code",
+        header: "Code",
+        cell: ({ row }) => (
+          <span className="font-mono text-xs text-muted-foreground">
+            {row.getValue("code")}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "name",
+        header: "Name",
+        cell: ({ row }) => {
+          const depth = row.original.depth;
+          const name: string = row.getValue("name");
+          return (
+            <span style={{ paddingLeft: `${depth * 1.25}rem` }}>
+              {depth === 0 ? <strong>{name}</strong> : name}
+            </span>
+          );
+        },
+      },
+      {
+        accessorKey: "type",
+        header: "Type",
+        cell: ({ row }) => {
+          const type = row.getValue("type") as AccountType;
+          const styles = TYPE_STYLES[type];
+          return (
+            <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${styles.badge}`}>
+              {type}
+            </span>
+          );
+        },
+      },
+      {
+        id: "actions",
+        cell: ({ row }) => (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={() => openEdit(row.original)}
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </Button>
+        ),
+      },
+    ],
+    [openEdit]
+  );
 
   const data = useMemo<CoaRow[]>(() => {
     const depthMap = buildDepthMap(accounts);
@@ -144,6 +194,10 @@ export function CoaTable() {
     setSelectedTypes((prev) =>
       prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type]
     );
+  }
+
+  function soloType(type: AccountType) {
+    setSelectedTypes([type]);
   }
 
   if (loading) {
@@ -166,22 +220,30 @@ export function CoaTable() {
   const rows = table.getRowModel().rows;
 
   return (
-    <div className="space-y-3">
-      {/* Type filter pills */}
-      <div className="flex flex-wrap gap-2">
-        {TYPES.map((type) => {
-          const active = selectedTypes.includes(type);
-          const styles = TYPE_STYLES[type];
-          return (
-            <button
-              key={type}
-              onClick={() => toggleType(type)}
-              className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium capitalize transition-all cursor-pointer ${active ? styles.pillActive : styles.pillInactive}`}
-            >
-              {type}
-            </button>
-          );
-        })}
+    <>
+      {/* Toolbar */}
+      <div className="flex items-center justify-between">
+        <div className="flex flex-wrap gap-2">
+          {TYPES.map((type) => {
+            const active = selectedTypes.includes(type);
+            const styles = TYPE_STYLES[type];
+            return (
+              <button
+                key={type}
+                onClick={() => toggleType(type)}
+                onDoubleClick={(e) => { e.preventDefault(); soloType(type); }}
+                className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium capitalize transition-all cursor-pointer ${active ? styles.pillActive : styles.pillInactive}`}
+              >
+                {type}
+              </button>
+            );
+          })}
+        </div>
+
+        <Button variant="success" size="sm" onClick={openCreate}>
+          <Plus className="h-4 w-4 mr-1" />
+          New Account
+        </Button>
       </div>
 
       {/* Data table */}
@@ -219,6 +281,25 @@ export function CoaTable() {
           </TableBody>
         </Table>
       </div>
-    </div>
+
+      {/* Create / Edit sheet */}
+      <Sheet open={sheet.open} onOpenChange={(open) => setSheet((s) => ({ ...s, open }))}>
+        <SheetContent>
+          <SheetHeader>
+            <SheetTitle>
+              {sheet.mode === "create" ? "New Account" : "Edit Account"}
+            </SheetTitle>
+          </SheetHeader>
+          <div className="flex-1 overflow-y-auto px-4 pb-6">
+            <CoaForm
+              key={sheet.mode === "edit" ? sheet.account?.code : "create"}
+              account={sheet.account}
+              accounts={accounts}
+              onSuccess={handleFormSuccess}
+            />
+          </div>
+        </SheetContent>
+      </Sheet>
+    </>
   );
 }
