@@ -16,7 +16,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
-import { ArrowLeftRight, BookOpen, Home, Landmark, LogOut, Wallet } from "lucide-react";
+import { ArrowLeftRight, BarChart2, BookOpen, Home, Landmark, LogOut, Wallet } from "lucide-react";
 import { signOut } from "next-auth/react";
 import Link from "next/link";
 
@@ -78,6 +78,14 @@ export function AppSidebar({ user }: AppSidebarProps) {
               <Link href="/coa">
                 <BookOpen className="h-4 w-4" />
                 <span>Chart of Accounts</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton asChild>
+              <Link href="/reports/coa">
+                <BarChart2 className="h-4 w-4" />
+                <span>COA Report</span>
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
