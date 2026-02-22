@@ -145,3 +145,34 @@ export const transactions = pgTable(
 
 export type Transaction    = typeof transactions.$inferSelect;
 export type NewTransaction = typeof transactions.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Account Balances
+// Manual balance snapshots per account.
+// accountId is a soft reference (index only, no FK constraint).
+// ---------------------------------------------------------------------------
+
+export const accountBalances = pgTable(
+  "account_balances",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    accountId: text("account_id").notNull(),
+    date:      date("date", { mode: "date" }).notNull(),
+    balance:   numeric("balance", { precision: 15, scale: 2 }).notNull(),
+    notes:     text("notes"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .notNull()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [
+    index("account_balances_account_id_idx").on(t.accountId),
+    index("account_balances_date_idx").on(t.date),
+  ]
+);
+
+export type AccountBalance    = typeof accountBalances.$inferSelect;
+export type NewAccountBalance = typeof accountBalances.$inferInsert;
