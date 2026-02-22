@@ -48,8 +48,10 @@ export interface TransactionRow {
   recipient: string | null;
   notes: string | null;
   transferId: string | null;
+  recipientId: string | null;
   accountName: string | null;
   coaName: string | null;
+  linkedRecipientName: string | null;
 }
 
 const CURRENCIES = ["BRL", "USD", "EUR", "GBP", "ARS", "CLP", "COP", "MXN", "UYU"];
@@ -103,6 +105,13 @@ export function TransactionForm({ transaction, onSuccess, onCreated }: Transacti
     () => coaCode !== "__none__" ? coaList.find((c) => c.code === coaCode) ?? null : null,
     [coaCode, coaList]
   );
+
+  // Accounts whose code appears as parentCode of another account are group
+  // accounts — they cannot be directly assigned to a transaction.
+  const leafCoaList = useMemo(() => {
+    const parentCodes = new Set(coaList.map((c) => c.parentCode).filter(Boolean));
+    return coaList.filter((c) => !parentCodes.has(c.code));
+  }, [coaList]);
 
   const [saving,        setSaving]        = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -303,7 +312,7 @@ export function TransactionForm({ transaction, onSuccess, onCreated }: Transacti
                     <Check className={`mr-2 h-4 w-4 ${coaCode === "__none__" ? "opacity-100" : "opacity-0"}`} />
                     — None —
                   </CommandItem>
-                  {coaList.map((c) => (
+                  {leafCoaList.map((c) => (
                     <CommandItem
                       key={c.code}
                       value={`${c.code} ${c.name}`}

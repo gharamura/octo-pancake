@@ -134,6 +134,9 @@ export const transactions = pgTable(
     // Shared UUID between the two legs of a transfer (COA 3110 ↔ 3120).
     // Null means the transaction is not (yet) linked to its counterpart.
     transferId:      text("transfer_id"),
+    // Direct link to a known recipient — bypasses alias matching when the
+    // raw description string is too generic to serve as a unique alias.
+    recipientId:     text("recipient_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -146,6 +149,7 @@ export const transactions = pgTable(
     index("transactions_transaction_date_idx").on(t.transactionDate),
     index("transactions_accounting_date_idx").on(t.accountingDate),
     index("transactions_transfer_id_idx").on(t.transferId),
+    index("transactions_recipient_id_idx").on(t.recipientId),
   ]
 );
 

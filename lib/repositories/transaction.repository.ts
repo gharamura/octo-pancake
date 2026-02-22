@@ -4,6 +4,7 @@ import {
   transactions,
   financialAccounts,
   coaAccounts,
+  recipients,
   type Transaction,
   type NewTransaction,
 } from "@/lib/db/schema";
@@ -19,29 +20,33 @@ export type TransactionRow = {
   recipient: string | null;
   notes: string | null;
   transferId: string | null;
+  recipientId: string | null;
   createdAt: Date | string;
   updatedAt: Date | string;
   accountName: string | null;
   coaName: string | null;
+  linkedRecipientName: string | null;
 };
 
 export class TransactionRepository {
   private get selectFields() {
     return {
-      id:              transactions.id,
-      transactionDate: transactions.transactionDate,
-      accountingDate:  transactions.accountingDate,
-      accountId:       transactions.accountId,
-      coaCode:         transactions.coaCode,
-      amount:          transactions.amount,
-      currency:        transactions.currency,
-      recipient:       transactions.recipient,
-      notes:           transactions.notes,
-      transferId:      transactions.transferId,
-      createdAt:       transactions.createdAt,
-      updatedAt:       transactions.updatedAt,
-      accountName:     financialAccounts.name,
-      coaName:         coaAccounts.name,
+      id:                  transactions.id,
+      transactionDate:     transactions.transactionDate,
+      accountingDate:      transactions.accountingDate,
+      accountId:           transactions.accountId,
+      coaCode:             transactions.coaCode,
+      amount:              transactions.amount,
+      currency:            transactions.currency,
+      recipient:           transactions.recipient,
+      notes:               transactions.notes,
+      transferId:          transactions.transferId,
+      recipientId:         transactions.recipientId,
+      createdAt:           transactions.createdAt,
+      updatedAt:           transactions.updatedAt,
+      accountName:         financialAccounts.name,
+      coaName:             coaAccounts.name,
+      linkedRecipientName: recipients.name,
     };
   }
 
@@ -51,6 +56,7 @@ export class TransactionRepository {
       .from(transactions)
       .leftJoin(financialAccounts, eq(transactions.accountId, financialAccounts.id))
       .leftJoin(coaAccounts, eq(transactions.coaCode, coaAccounts.code))
+      .leftJoin(recipients, eq(transactions.recipientId, recipients.id))
       .orderBy(desc(transactions.transactionDate), desc(transactions.createdAt));
   }
 
@@ -60,6 +66,7 @@ export class TransactionRepository {
       .from(transactions)
       .leftJoin(financialAccounts, eq(transactions.accountId, financialAccounts.id))
       .leftJoin(coaAccounts, eq(transactions.coaCode, coaAccounts.code))
+      .leftJoin(recipients, eq(transactions.recipientId, recipients.id))
       .where(eq(transactions.id, id));
     return rows[0] ?? null;
   }

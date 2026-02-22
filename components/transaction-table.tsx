@@ -46,6 +46,8 @@ import {
 } from "@/components/ui/select";
 import { TransactionForm, type TransactionRow } from "@/components/transaction-form";
 import { LinkTransferDialog, UnlinkTransferDialog } from "@/components/link-transfer-dialog";
+import { LinkRecipientDialog } from "@/components/link-recipient-dialog";
+import type { RecipientDetail } from "@/lib/repositories/recipient.repository";
 import {
   ArrowUpDown,
   CalendarDays,
@@ -56,6 +58,7 @@ import {
   Plus,
   Search,
   Unlink2,
+  UserRound,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -352,6 +355,12 @@ export function TransactionTable() {
   const [selectedIds,   setSelectedIds]   = useState<Set<string>>(new Set());
   const [allCoaOptions, setAllCoaOptions] = useState<CoaOption[]>([]);
 
+  // ── Link recipient dialog state ───────────────────────────────────────────
+  const [linkRecipientDialog, setLinkRecipientDialog] = useState<{
+    open: boolean; transaction: TransactionRow | null;
+  }>({ open: false, transaction: null });
+  const [allRecipients, setAllRecipients] = useState<RecipientDetail[]>([]);
+
   // ── Data fetching ─────────────────────────────────────────────────────────
   const fetchTransactions = useCallback(() => {
     setLoading(true);
@@ -371,9 +380,21 @@ export function TransactionTable() {
   useEffect(() => {
     fetch("/api/coa")
       .then((r) => r.json())
-      .then((data: { code: string; name: string }[]) =>
-        setAllCoaOptions(data.map(({ code, name }) => ({ code, name })))
-      )
+      .then((data: { code: string; name: string; parentCode: string | null }[]) => {
+        const parentCodes = new Set(data.map((c) => c.parentCode).filter(Boolean));
+        setAllCoaOptions(
+          data
+            .filter((c) => !parentCodes.has(c.code))
+            .map(({ code, name }) => ({ code, name }))
+        );
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/recipients")
+      .then((r) => r.json())
+      .then((data: RecipientDetail[]) => setAllRecipients(data))
       .catch(() => {});
   }, []);
 
@@ -580,11 +601,28 @@ export function TransactionTable() {
         },
       },
       {
-        accessorKey: "recipient",
+        id: "recipient",
         header: "Recipient",
-        cell: ({ row }) => (
-          <span className="text-muted-foreground">{row.getValue("recipient") ?? "—"}</span>
-        ),
+        cell: ({ row }) => {
+          const t = row.original;
+          const isLinked = !!t.recipientId;
+          return (
+            <div className="flex items-center gap-1 group/rec">
+              <span className={isLinked ? "font-medium text-foreground" : "text-muted-foreground"}>
+                {isLinked ? (t.linkedRecipientName ?? t.recipient ?? "—") : (t.recipient ?? "—")}
+              </span>
+              <button
+                title={isLinked ? "Change linked recipient" : "Link to recipient"}
+                className={`transition-opacity text-muted-foreground hover:text-foreground ${
+                  isLinked ? "opacity-60 hover:opacity-100" : "opacity-0 group-hover/rec:opacity-60 hover:!opacity-100"
+                }`}
+                onClick={(e) => { e.stopPropagation(); setLinkRecipientDialog({ open: true, transaction: t }); }}
+              >
+                <UserRound className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          );
+        },
       },
       {
         accessorKey: "coaName",
@@ -663,7 +701,7 @@ export function TransactionTable() {
         ),
       },
     ],
-    [openEdit, flipSign, setLinkDialog, setUnlinkDialog, selectedIds, toggleRow, filtered, headerCheckboxRef]
+    [openEdit, flipSign, setLinkDialog, setUnlinkDialog, setLinkRecipientDialog, selectedIds, toggleRow, filtered, headerCheckboxRef]
   );
 
   const table = useReactTable({
@@ -802,9 +840,9 @@ export function TransactionTable() {
       )}
 
       {/* ── Table ────────────────────────────────────────────────────────── */}
-      <div className="rounded-md border">
+      <div className="rounded-md border overflow-auto max-h-[calc(100svh-16rem)]">
         <Table>
-          <TableHeader>
+          <TableHeader className="sticky top-0 z-10 bg-background">
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
@@ -882,6 +920,25 @@ export function TransactionTable() {
               )
             );
             fetchTransactions();
+          }}
+        />
+      )}
+
+      {/* ── Link recipient dialog ─────────────────────────────────────────── */}
+      {linkRecipientDialog.transaction && (
+        <LinkRecipientDialog
+          open={linkRecipientDialog.open}
+          onOpenChange={(open) => setLinkRecipientDialog((s) => ({ ...s, open }))}
+          transaction={linkRecipientDialog.transaction}
+          allRecipients={allRecipients}
+          onLinked={(recipientId, recipientName) => {
+            setTransactions((prev) =>
+              prev.map((t) =>
+                t.id === linkRecipientDialog.transaction!.id
+                  ? { ...t, recipientId, linkedRecipientName: recipientName }
+                  : t
+              )
+            );
           }}
         />
       )}
