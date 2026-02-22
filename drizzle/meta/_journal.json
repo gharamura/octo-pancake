@@ -15,6 +15,13 @@
       "when": 1771718517945,
       "tag": "0001_opposite_the_captain",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1771726284633,
+      "tag": "0002_last_eternals",
+      "breakpoints": true
     }
   ]
 }

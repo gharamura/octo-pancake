@@ -1,4 +1,4 @@
-import { AnyPgColumn, boolean, index, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { AnyPgColumn, boolean, index, integer, numeric, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
   id: text("id")
@@ -78,3 +78,34 @@ export type NewCoaAccount = typeof coaAccounts.$inferInsert;
 
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Financial Accounts
+// Global shared table — no userId.
+// ---------------------------------------------------------------------------
+
+export type FinancialAccountType = "savings" | "checking" | "credit_card" | "investment" | "other";
+
+export const financialAccounts = pgTable("financial_accounts", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  name: text("name").notNull(),
+  type: text("type").$type<FinancialAccountType>().notNull(),
+  institution: text("institution"),
+  owner: text("owner"),
+  accountNumber: text("account_number"),
+  openingBalance: numeric("opening_balance", { precision: 15, scale: 2 })
+    .notNull()
+    .default("0"),
+  notes: text("notes"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at")
+    .defaultNow()
+    .notNull()
+    .$onUpdate(() => new Date()),
+});
+
+export type FinancialAccount = typeof financialAccounts.$inferSelect;
+export type NewFinancialAccount = typeof financialAccounts.$inferInsert;
