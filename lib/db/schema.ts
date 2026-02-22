@@ -75,3 +75,6 @@ export const coaAccounts = pgTable(
 
 export type CoaAccount = typeof coaAccounts.$inferSelect;
 export type NewCoaAccount = typeof coaAccounts.$inferInsert;
+
+export type User = typeof users.$inferSelect;
+export type NewUser = typeof users.$inferInsert;
