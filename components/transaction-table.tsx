@@ -23,7 +23,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { TransactionForm, type TransactionRow } from "@/components/transaction-form";
-import { Pencil, Plus } from "lucide-react";
+import { ArrowUpDown, Pencil, Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 // ---------------------------------------------------------------------------
@@ -83,6 +83,32 @@ export function TransactionTable() {
     fetchTransactions();
   }, [fetchTransactions]);
 
+  const flipSign = useCallback((row: TransactionRow) => {
+    const newAmount = String(-parseFloat(row.amount));
+    // Optimistic update
+    setTransactions((prev) =>
+      prev.map((t) => t.id === row.id ? { ...t, amount: newAmount } : t)
+    );
+    fetch(`/api/transactions/${row.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        transactionDate:  row.transactionDate,
+        accountingDate:   row.accountingDate,
+        accountId:        row.accountId,
+        coaCode:          row.coaCode,
+        amount:           newAmount,
+        recipient:        row.recipient,
+        notes:            row.notes,
+      }),
+    }).catch(() => {
+      // Revert on failure
+      setTransactions((prev) =>
+        prev.map((t) => t.id === row.id ? { ...t, amount: row.amount } : t)
+      );
+    });
+  }, []);
+
   const columns = useMemo<ColumnDef<TransactionRow>[]>(
     () => [
       {
@@ -108,9 +134,20 @@ export function TransactionTable() {
           const val = parseFloat(row.getValue("amount") ?? "0");
           const color = val >= 0 ? "text-green-700 dark:text-green-400" : "text-red-600 dark:text-red-400";
           return (
-            <span className={`tabular-nums font-medium ${color}`}>
-              {val.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-            </span>
+            <div className="flex items-center gap-1">
+              <span className={`tabular-nums font-medium ${color}`}>
+                {val.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+              </span>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-5 w-5 text-muted-foreground/40 hover:text-muted-foreground"
+                onClick={(e) => { e.stopPropagation(); flipSign(row.original); }}
+                title={val >= 0 ? "Mark as expense (negative)" : "Mark as income (positive)"}
+              >
+                <ArrowUpDown className="h-3 w-3" />
+              </Button>
+            </div>
           );
         },
       },
@@ -165,7 +202,7 @@ export function TransactionTable() {
         ),
       },
     ],
-    [openEdit]
+    [openEdit, flipSign]
   );
 
   const table = useReactTable({
