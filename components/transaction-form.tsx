@@ -1,8 +1,17 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -11,6 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { FinancialAccount, CoaAccount } from "@/lib/db/schema";
+import { Check, ChevronsUpDown } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 // ---------------------------------------------------------------------------
@@ -81,6 +91,12 @@ export function TransactionForm({ transaction, onSuccess }: TransactionFormProps
     setAccountingDate(transactionDate);
   }, [transactionDate, selectedAccount, isCredit]);
 
+  const [coaOpen, setCoaOpen] = useState(false);
+  const selectedCoa = useMemo(
+    () => coaCode !== "__none__" ? coaList.find((c) => c.code === coaCode) ?? null : null,
+    [coaCode, coaList]
+  );
+
   const [saving,        setSaving]        = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting,      setDeleting]      = useState(false);
@@ -97,8 +113,7 @@ export function TransactionForm({ transaction, onSuccess }: TransactionFormProps
       .catch(() => {});
   }, []);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function handleSubmit() {
     setError(null);
     setSaving(true);
     try {
@@ -156,7 +171,7 @@ export function TransactionForm({ transaction, onSuccess }: TransactionFormProps
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-5">
+    <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }} className="space-y-5">
       <div className="space-y-1.5">
         <Label>Account</Label>
         <Select value={accountId} onValueChange={setAccountId} required>
@@ -224,19 +239,59 @@ export function TransactionForm({ transaction, onSuccess }: TransactionFormProps
 
       <div className="space-y-1.5">
         <Label>COA Account</Label>
-        <Select value={coaCode} onValueChange={setCoaCode}>
-          <SelectTrigger>
-            <SelectValue placeholder="Select COA account… (optional)" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__none__">— None —</SelectItem>
-            {coaList.map((c) => (
-              <SelectItem key={c.code} value={c.code}>
-                {c.code} · {c.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <Popover open={coaOpen} onOpenChange={setCoaOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              role="combobox"
+              aria-expanded={coaOpen}
+              className="w-full justify-between font-normal"
+            >
+              <span className="truncate">
+                {selectedCoa ? `${selectedCoa.code} · ${selectedCoa.name}` : "— None —"}
+              </span>
+              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+            <Command>
+              <CommandInput placeholder="Search by code or name…" />
+              <CommandList>
+                <CommandEmpty>No account found.</CommandEmpty>
+                <CommandGroup>
+                  <CommandItem
+                    value="__none__"
+                    onSelect={() => { setCoaCode("__none__"); setCoaOpen(false); }}
+                  >
+                    <Check className={`mr-2 h-4 w-4 ${coaCode === "__none__" ? "opacity-100" : "opacity-0"}`} />
+                    — None —
+                  </CommandItem>
+                  {coaList.map((c) => (
+                    <CommandItem
+                      key={c.code}
+                      value={`${c.code} ${c.name}`}
+                      onSelect={() => {
+                        setCoaCode(c.code);
+                        setCoaOpen(false);
+                        if (amount) {
+                          const val = parseFloat(amount);
+                          if (!isNaN(val) && val !== 0) {
+                            if (c.type === "expense" && val > 0) setAmount(String(-val));
+                            if (c.type === "income"  && val < 0) setAmount(String(-val));
+                          }
+                        }
+                      }}
+                    >
+                      <Check className={`mr-2 h-4 w-4 ${coaCode === c.code ? "opacity-100" : "opacity-0"}`} />
+                      {c.code} · {c.name}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        </Popover>
       </div>
 
       <div className="space-y-1.5">
