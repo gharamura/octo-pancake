@@ -37,6 +37,13 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { TransactionForm, type TransactionRow } from "@/components/transaction-form";
 import { LinkTransferDialog, UnlinkTransferDialog } from "@/components/link-transfer-dialog";
 import {
@@ -51,7 +58,7 @@ import {
   Unlink2,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const TRANSFER_CODES = new Set(["3110", "3120"]);
 
@@ -228,6 +235,87 @@ function DateRangeFilter({
 }
 
 // ---------------------------------------------------------------------------
+// Bulk edit bar
+// ---------------------------------------------------------------------------
+
+type CoaOption = { code: string; name: string };
+
+function BulkEditBar({
+  selectedCount,
+  coaOptions,
+  onApply,
+  onClear,
+}: {
+  selectedCount: number;
+  coaOptions: CoaOption[];
+  onApply: (data: { coaCode?: string | null; accountingDate?: string | null }) => Promise<void>;
+  onClear: () => void;
+}) {
+  const [coaCode,         setCoaCode]         = useState("");   // "" = no change; "__clear__" = set null
+  const [accountingMonth, setAccountingMonth] = useState("");   // "YYYY-MM" or ""
+  const [applying, setApplying] = useState(false);
+
+  const hasChanges = !!coaCode || !!accountingMonth;
+
+  const handleApply = async () => {
+    if (!hasChanges) return;
+    setApplying(true);
+    const data: { coaCode?: string | null; accountingDate?: string | null } = {};
+    if (coaCode)         data.coaCode        = coaCode === "__clear__" ? null : coaCode;
+    if (accountingMonth) data.accountingDate = `${accountingMonth}-01`;
+    await onApply(data);
+    setApplying(false);
+    setCoaCode("");
+    setAccountingMonth("");
+  };
+
+  return (
+    <div className="flex items-center gap-2 flex-wrap rounded-md border border-primary/20 bg-primary/5 px-3 py-2">
+      <span className="text-sm font-medium text-primary">
+        {selectedCount} selected
+      </span>
+      <div className="h-4 w-px bg-border" />
+
+      {/* COA selector */}
+      <Select value={coaCode} onValueChange={setCoaCode}>
+        <SelectTrigger className="h-8 w-60 text-xs">
+          <SelectValue placeholder="Set COA account…" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__clear__">
+            <span className="text-muted-foreground italic">— Clear COA —</span>
+          </SelectItem>
+          {coaOptions.map((c) => (
+            <SelectItem key={c.code} value={c.code}>
+              <span className="font-mono text-xs text-muted-foreground mr-1.5">{c.code}</span>
+              {c.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      {/* Accounting period (month picker) */}
+      <Input
+        type="month"
+        value={accountingMonth}
+        onChange={(e) => setAccountingMonth(e.target.value)}
+        className="h-8 w-40 text-xs"
+        placeholder="Accounting period"
+      />
+
+      <Button size="sm" className="h-8" onClick={handleApply} disabled={!hasChanges || applying}>
+        {applying ? "Applying…" : "Apply"}
+      </Button>
+
+      <Button variant="ghost" size="sm" className="h-8 ml-auto text-muted-foreground" onClick={onClear}>
+        <X className="h-3 w-3 mr-1" />
+        Clear selection
+      </Button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Sheet state
 // ---------------------------------------------------------------------------
 
@@ -260,6 +348,10 @@ export function TransactionTable() {
   const [linkDialog,   setLinkDialog]   = useState<{ open: boolean; transaction: TransactionRow | null }>({ open: false, transaction: null });
   const [unlinkDialog, setUnlinkDialog] = useState<{ open: boolean; transaction: TransactionRow | null }>({ open: false, transaction: null });
 
+  // ── Bulk edit state ───────────────────────────────────────────────────────
+  const [selectedIds,   setSelectedIds]   = useState<Set<string>>(new Set());
+  const [allCoaOptions, setAllCoaOptions] = useState<CoaOption[]>([]);
+
   // ── Data fetching ─────────────────────────────────────────────────────────
   const fetchTransactions = useCallback(() => {
     setLoading(true);
@@ -275,6 +367,15 @@ export function TransactionTable() {
   useEffect(() => {
     fetchTransactions();
   }, [fetchTransactions]);
+
+  useEffect(() => {
+    fetch("/api/coa")
+      .then((r) => r.json())
+      .then((data: { code: string; name: string }[]) =>
+        setAllCoaOptions(data.map(({ code, name }) => ({ code, name })))
+      )
+      .catch(() => {});
+  }, []);
 
   // ── CRUD handlers ─────────────────────────────────────────────────────────
   const openCreate = useCallback(() => setSheet({ open: true, mode: "create" }), []);
@@ -378,9 +479,65 @@ export function TransactionTable() {
   const toggleCoa = useCallback((v: string) =>
     setFilterCoa((prev) => prev.includes(v) ? prev.filter((x) => x !== v) : [...prev, v]), []);
 
+  // ── Bulk edit handlers ────────────────────────────────────────────────────
+  const toggleRow = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const handleBulkApply = useCallback(async (
+    data: { coaCode?: string | null; accountingDate?: string | null }
+  ) => {
+    await fetch("/api/transactions", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: Array.from(selectedIds), ...data }),
+    });
+    fetchTransactions();
+    setSelectedIds(new Set());
+  }, [selectedIds, fetchTransactions]);
+
+  // ── Header checkbox ref (indeterminate state) ─────────────────────────────
+  const headerCheckboxRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const el = headerCheckboxRef.current;
+    if (!el) return;
+    const n = filtered.filter((t) => selectedIds.has(t.id)).length;
+    el.checked       = n === filtered.length && filtered.length > 0;
+    el.indeterminate = n > 0 && n < filtered.length;
+  }, [selectedIds, filtered]);
+
   // ── Columns ───────────────────────────────────────────────────────────────
   const columns = useMemo<ColumnDef<TransactionRow>[]>(
     () => [
+      {
+        id: "select",
+        header: () => (
+          <input
+            type="checkbox"
+            ref={headerCheckboxRef}
+            onChange={(e) =>
+              setSelectedIds(
+                e.target.checked ? new Set(filtered.map((t) => t.id)) : new Set()
+              )
+            }
+            className="h-4 w-4 cursor-pointer rounded border-border accent-primary"
+          />
+        ),
+        cell: ({ row }) => (
+          <input
+            type="checkbox"
+            checked={selectedIds.has(row.original.id)}
+            onChange={() => toggleRow(row.original.id)}
+            onClick={(e) => e.stopPropagation()}
+            className="h-4 w-4 cursor-pointer rounded border-border accent-primary"
+          />
+        ),
+      },
       {
         accessorKey: "transactionDate",
         header: "Date",
@@ -506,7 +663,7 @@ export function TransactionTable() {
         ),
       },
     ],
-    [openEdit, flipSign, setLinkDialog, setUnlinkDialog]
+    [openEdit, flipSign, setLinkDialog, setUnlinkDialog, selectedIds, toggleRow, filtered, headerCheckboxRef]
   );
 
   const table = useReactTable({
@@ -633,6 +790,16 @@ export function TransactionTable() {
           New Transaction
         </Button>
       </div>
+
+      {/* ── Bulk edit bar ────────────────────────────────────────────────── */}
+      {selectedIds.size > 0 && (
+        <BulkEditBar
+          selectedCount={selectedIds.size}
+          coaOptions={allCoaOptions}
+          onApply={handleBulkApply}
+          onClear={() => setSelectedIds(new Set())}
+        />
+      )}
 
       {/* ── Table ────────────────────────────────────────────────────────── */}
       <div className="rounded-md border">

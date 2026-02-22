@@ -41,3 +41,26 @@ export async function POST(req: Request) {
 
   return NextResponse.json(transaction, { status: 201 });
 }
+
+// PATCH /api/transactions — bulk update coaCode and/or accountingDate
+export async function PATCH(req: Request) {
+  const session = await auth();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const { ids, coaCode, accountingDate } = await req.json();
+
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return NextResponse.json({ error: "ids array is required." }, { status: 400 });
+  }
+
+  const data: { coaCode?: string | null; accountingDate?: Date | null } = {};
+  if (coaCode !== undefined)        data.coaCode        = coaCode || null;
+  if (accountingDate !== undefined) data.accountingDate = accountingDate ? new Date(accountingDate) : null;
+
+  if (Object.keys(data).length === 0) {
+    return NextResponse.json({ error: "Nothing to update." }, { status: 400 });
+  }
+
+  await transactionRepository.bulkUpdate(ids, data);
+  return NextResponse.json({ ok: true, updated: ids.length });
+}

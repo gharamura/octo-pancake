@@ -92,6 +92,18 @@ export class TransactionRepository {
     return result.length > 0;
   }
 
+  /** Update coaCode and/or accountingDate on multiple transactions at once. */
+  async bulkUpdate(
+    ids: string[],
+    data: { coaCode?: string | null; accountingDate?: Date | null }
+  ): Promise<void> {
+    if (ids.length === 0) return;
+    await db
+      .update(transactions)
+      .set(data)
+      .where(inArray(transactions.id, ids));
+  }
+
   /** Link two transfer legs together by stamping them with a shared transferId. */
   async linkTransactions(id1: string, id2: string): Promise<string> {
     const transferId = crypto.randomUUID();
