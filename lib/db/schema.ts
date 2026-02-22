@@ -1,4 +1,4 @@
-import { AnyPgColumn, boolean, date, index, integer, numeric, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { AnyPgColumn, boolean, date, index, integer, numeric, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
   id: text("id")
@@ -176,3 +176,65 @@ export const accountBalances = pgTable(
 
 export type AccountBalance    = typeof accountBalances.$inferSelect;
 export type NewAccountBalance = typeof accountBalances.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Recipients
+// Internal FKs: aliases and coa_links reference recipients (cascade delete).
+// coaCode is a soft reference (cross-domain, index only, no FK).
+// ---------------------------------------------------------------------------
+
+export const recipients = pgTable("recipients", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  name:     text("name").notNull(),
+  notes:    text("notes"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at")
+    .defaultNow()
+    .notNull()
+    .$onUpdate(() => new Date()),
+});
+
+export type Recipient    = typeof recipients.$inferSelect;
+export type NewRecipient = typeof recipients.$inferInsert;
+
+export const recipientAliases = pgTable(
+  "recipient_aliases",
+  {
+    alias:       text("alias").primaryKey(),
+    recipientId: text("recipient_id")
+      .notNull()
+      .references(() => recipients.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("recipient_aliases_recipient_id_idx").on(t.recipientId),
+  ]
+);
+
+export type RecipientAlias    = typeof recipientAliases.$inferSelect;
+export type NewRecipientAlias = typeof recipientAliases.$inferInsert;
+
+export const recipientCoa = pgTable(
+  "recipient_coa",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    recipientId: text("recipient_id")
+      .notNull()
+      .references(() => recipients.id, { onDelete: "cascade" }),
+    coaCode:   text("coa_code").notNull(),
+    isPrimary: boolean("is_primary").notNull().default(false),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("recipient_coa_unique_idx").on(t.recipientId, t.coaCode),
+    index("recipient_coa_coa_code_idx").on(t.coaCode),
+  ]
+);
+
+export type RecipientCoa    = typeof recipientCoa.$inferSelect;
+export type NewRecipientCoa = typeof recipientCoa.$inferInsert;
