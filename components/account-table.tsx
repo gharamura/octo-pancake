@@ -28,6 +28,41 @@ import { Pencil, Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 // ---------------------------------------------------------------------------
+// Pill helper
+// ---------------------------------------------------------------------------
+
+function FilterPill({
+  label,
+  active,
+  className,
+  onClick,
+  onDoubleClick,
+}: {
+  label: string;
+  active: boolean;
+  className?: string;
+  onClick: () => void;
+  onDoubleClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      onDoubleClick={onDoubleClick}
+      className={[
+        "inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium transition-opacity select-none",
+        active ? "" : "opacity-30",
+        className,
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      {label}
+    </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Type badge
 // ---------------------------------------------------------------------------
 
@@ -36,6 +71,7 @@ const TYPE_LABELS: Record<FinancialAccountType, string> = {
   checking:    "Checking",
   credit_card: "Credit Card",
   investment:  "Investment",
+  benefits:    "Benefits",
   other:       "Other",
 };
 
@@ -44,6 +80,7 @@ const TYPE_BADGE: Record<FinancialAccountType, string> = {
   checking:    "bg-green-100  text-green-800  dark:bg-green-900/30  dark:text-green-400",
   credit_card: "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400",
   investment:  "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400",
+  benefits:    "bg-teal-100   text-teal-800   dark:bg-teal-900/30   dark:text-teal-400",
   other:       "bg-gray-100   text-gray-700   dark:bg-gray-800      dark:text-gray-300",
 };
 
@@ -65,6 +102,19 @@ export function AccountTable() {
   const [accounts, setAccounts] = useState<FinancialAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [sheet, setSheet] = useState<SheetState>({ open: false, mode: "create" });
+  const [selectedTypes, setSelectedTypes] = useState<FinancialAccountType[]>([]);
+  const [selectedOwners, setSelectedOwners] = useState<string[]>([]);
+  const [selectedInstitutions, setSelectedInstitutions] = useState<string[]>([]);
+
+  const ownerOptions = useMemo(
+    () => Array.from(new Set(accounts.map((a) => a.owner).filter(Boolean) as string[])).sort(),
+    [accounts]
+  );
+
+  const institutionOptions = useMemo(
+    () => Array.from(new Set(accounts.map((a) => a.institution).filter(Boolean) as string[])).sort(),
+    [accounts]
+  );
 
   const fetchAccounts = useCallback(() => {
     setLoading(true);
@@ -80,6 +130,26 @@ export function AccountTable() {
   useEffect(() => {
     fetchAccounts();
   }, [fetchAccounts]);
+
+  const toggleType = useCallback((t: FinancialAccountType) =>
+    setSelectedTypes((prev) => prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]), []);
+  const soloType = useCallback((t: FinancialAccountType) => setSelectedTypes([t]), []);
+
+  const toggleOwner = useCallback((o: string) =>
+    setSelectedOwners((prev) => prev.includes(o) ? prev.filter((x) => x !== o) : [...prev, o]), []);
+  const soloOwner = useCallback((o: string) => setSelectedOwners([o]), []);
+
+  const toggleInstitution = useCallback((i: string) =>
+    setSelectedInstitutions((prev) => prev.includes(i) ? prev.filter((x) => x !== i) : [...prev, i]), []);
+  const soloInstitution = useCallback((i: string) => setSelectedInstitutions([i]), []);
+
+  const filteredAccounts = useMemo(() => {
+    let data = accounts;
+    if (selectedTypes.length)        data = data.filter((a) => selectedTypes.includes(a.type));
+    if (selectedOwners.length)       data = data.filter((a) => a.owner && selectedOwners.includes(a.owner));
+    if (selectedInstitutions.length) data = data.filter((a) => a.institution && selectedInstitutions.includes(a.institution));
+    return data;
+  }, [accounts, selectedTypes, selectedOwners, selectedInstitutions]);
 
   const openCreate = useCallback(() => setSheet({ open: true, mode: "create" }), []);
   const openEdit = useCallback(
@@ -180,7 +250,7 @@ export function AccountTable() {
   );
 
   const table = useReactTable({
-    data: accounts,
+    data: filteredAccounts,
     columns,
     getCoreRowModel: getCoreRowModel(),
   });
@@ -206,8 +276,56 @@ export function AccountTable() {
 
   return (
     <>
-      <div className="flex justify-end">
-        <Button variant="success" size="sm" onClick={openCreate}>
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex flex-wrap gap-x-4 gap-y-2">
+          {/* Type filters */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            {(Object.keys(TYPE_LABELS) as FinancialAccountType[]).map((t) => (
+              <FilterPill
+                key={t}
+                label={TYPE_LABELS[t]}
+                active={selectedTypes.length === 0 || selectedTypes.includes(t)}
+                className={TYPE_BADGE[t]}
+                onClick={() => toggleType(t)}
+                onDoubleClick={() => soloType(t)}
+              />
+            ))}
+          </div>
+
+          {/* Owner filters */}
+          {ownerOptions.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              {ownerOptions.map((o) => (
+                <FilterPill
+                  key={o}
+                  label={o}
+                  active={selectedOwners.length === 0 || selectedOwners.includes(o)}
+                  className="bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                  onClick={() => toggleOwner(o)}
+                  onDoubleClick={() => soloOwner(o)}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Institution filters */}
+          {institutionOptions.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              {institutionOptions.map((i) => (
+                <FilterPill
+                  key={i}
+                  label={i}
+                  active={selectedInstitutions.length === 0 || selectedInstitutions.includes(i)}
+                  className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+                  onClick={() => toggleInstitution(i)}
+                  onDoubleClick={() => soloInstitution(i)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+
+        <Button variant="success" size="sm" onClick={openCreate} className="shrink-0">
           <Plus className="h-4 w-4 mr-1" />
           New Account
         </Button>

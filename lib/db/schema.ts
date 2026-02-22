@@ -84,7 +84,7 @@ export type NewUser = typeof users.$inferInsert;
 // Global shared table — no userId.
 // ---------------------------------------------------------------------------
 
-export type FinancialAccountType = "savings" | "checking" | "credit_card" | "investment" | "other";
+export type FinancialAccountType = "savings" | "checking" | "credit_card" | "investment" | "benefits" | "other";
 
 export const financialAccounts = pgTable("financial_accounts", {
   id: text("id")

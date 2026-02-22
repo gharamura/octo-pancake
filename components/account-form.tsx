@@ -19,6 +19,7 @@ const TYPES: { value: FinancialAccountType; label: string }[] = [
   { value: "checking",    label: "Checking" },
   { value: "credit_card", label: "Credit Card" },
   { value: "investment",  label: "Investment" },
+  { value: "benefits",    label: "Benefits" },
   { value: "other",       label: "Other" },
 ];
 
