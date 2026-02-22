@@ -11,7 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { FinancialAccount, CoaAccount } from "@/lib/db/schema";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -66,6 +66,20 @@ export function TransactionForm({ transaction, onSuccess }: TransactionFormProps
 
   const [accounts, setAccounts] = useState<FinancialAccount[]>([]);
   const [coaList,  setCoaList]  = useState<CoaAccount[]>([]);
+
+  const selectedAccount = useMemo(
+    () => accounts.find((a) => a.id === accountId) ?? null,
+    [accounts, accountId]
+  );
+
+  const isCredit = selectedAccount?.type === "credit_card";
+
+  // For non-credit accounts the accounting date is always the same as the
+  // transaction date — keep them in sync automatically.
+  useEffect(() => {
+    if (!selectedAccount || isCredit) return;
+    setAccountingDate(transactionDate);
+  }, [transactionDate, selectedAccount, isCredit]);
 
   const [saving,        setSaving]        = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -144,27 +158,6 @@ export function TransactionForm({ transaction, onSuccess }: TransactionFormProps
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
       <div className="space-y-1.5">
-        <Label htmlFor="transactionDate">Transaction Date</Label>
-        <Input
-          id="transactionDate"
-          type="date"
-          value={transactionDate}
-          onChange={(e) => setTransactionDate(e.target.value)}
-          required
-        />
-      </div>
-
-      <div className="space-y-1.5">
-        <Label htmlFor="accountingDate">Accounting Date</Label>
-        <Input
-          id="accountingDate"
-          type="date"
-          value={accountingDate}
-          onChange={(e) => setAccountingDate(e.target.value)}
-        />
-      </div>
-
-      <div className="space-y-1.5">
         <Label>Account</Label>
         <Select value={accountId} onValueChange={setAccountId} required>
           <SelectTrigger>
@@ -181,6 +174,27 @@ export function TransactionForm({ transaction, onSuccess }: TransactionFormProps
       </div>
 
       <div className="space-y-1.5">
+        <Label htmlFor="transactionDate">Transaction Date</Label>
+        <Input
+          id="transactionDate"
+          type="date"
+          value={transactionDate}
+          onChange={(e) => setTransactionDate(e.target.value)}
+          required
+        />
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor="recipient">Recipient</Label>
+        <Input
+          id="recipient"
+          value={recipient}
+          onChange={(e) => setRecipient(e.target.value)}
+          placeholder="e.g. Supermarket, Salary"
+        />
+      </div>
+
+      <div className="space-y-1.5">
         <Label htmlFor="amount">Amount</Label>
         <Input
           id="amount"
@@ -194,15 +208,19 @@ export function TransactionForm({ transaction, onSuccess }: TransactionFormProps
         <p className="text-xs text-muted-foreground">Use a negative value for expenses.</p>
       </div>
 
-      <div className="space-y-1.5">
-        <Label htmlFor="recipient">Recipient</Label>
-        <Input
-          id="recipient"
-          value={recipient}
-          onChange={(e) => setRecipient(e.target.value)}
-          placeholder="e.g. Supermarket, Salary"
-        />
-      </div>
+      {isCredit && (
+        <div className="space-y-1.5">
+          <Label htmlFor="accountingDate">Accounting Month</Label>
+          <Input
+            id="accountingDate"
+            type="month"
+            value={accountingDate.slice(0, 7)}
+            onChange={(e) =>
+              setAccountingDate(e.target.value ? `${e.target.value}-01` : "")
+            }
+          />
+        </div>
+      )}
 
       <div className="space-y-1.5">
         <Label>COA Account</Label>
