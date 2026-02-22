@@ -9,6 +9,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { AccountType } from "@/lib/db/schema";
+import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 // ---------------------------------------------------------------------------
@@ -43,13 +44,16 @@ interface CoaReportRow {
   total:      number;
 }
 
+type SortKey = "code" | "total" | number; // number = month (1–12)
+type SortDir = "asc" | "desc";
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 function fmt(val: number): string {
   if (val === 0) return "—";
-  return val.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  return val.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
 
 function valColor(val: number, positiveIsGood: boolean): string {
@@ -72,6 +76,17 @@ function sectionMonthSum(rows: CoaReportRow[], m: number): number {
 
 function sectionTotal(rows: CoaReportRow[]): number {
   return rows.reduce((s, r) => s + r.total, 0);
+}
+
+// ---------------------------------------------------------------------------
+// Sort icon
+// ---------------------------------------------------------------------------
+
+function SortIcon({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey; sortDir: SortDir }) {
+  if (col !== sortKey) return <ArrowUpDown className="ml-1 inline h-3 w-3 opacity-30" />;
+  return sortDir === "asc"
+    ? <ArrowUp   className="ml-1 inline h-3 w-3" />
+    : <ArrowDown className="ml-1 inline h-3 w-3" />;
 }
 
 // ---------------------------------------------------------------------------
@@ -214,6 +229,17 @@ export function CoaReport() {
   const [year,    setYear]    = useState(CURRENT_YEAR);
   const [data,    setData]    = useState<CoaReportRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [sortKey, setSortKey] = useState<SortKey>("code");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
+
+  function handleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir(key === "code" ? "asc" : "desc");
+    }
+  }
 
   useEffect(() => {
     setLoading(true);
@@ -227,13 +253,23 @@ export function CoaReport() {
   }, [year]);
 
   const byType = useMemo(() => {
+    const sorted = [...data].sort((a, b) => {
+      const factor = sortDir === "asc" ? 1 : -1;
+      if (sortKey === "code")  return factor * a.code.localeCompare(b.code);
+      if (sortKey === "total") return factor * (a.total - b.total);
+      return factor * (mv(a, sortKey) - mv(b, sortKey));
+    });
+
     const map: Partial<Record<AccountType, CoaReportRow[]>> = {};
-    for (const row of data) {
+    for (const row of sorted) {
       if (!map[row.type]) map[row.type] = [];
       map[row.type]!.push(row);
     }
     return map;
-  }, [data]);
+  }, [data, sortKey, sortDir]);
+
+  const TH_SORT =
+    "cursor-pointer select-none hover:bg-muted/60 transition-colors";
 
   return (
     <div className="space-y-4">
@@ -274,19 +310,29 @@ export function CoaReport() {
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr className="border-b bg-muted/40">
-                <th className={`${TH_STICKY} bg-muted/40 min-w-[260px]`}>
+                <th
+                  onClick={() => handleSort("code")}
+                  className={`${TH_STICKY} bg-muted/40 min-w-[260px] ${TH_SORT}`}
+                >
                   Account
+                  <SortIcon col="code" sortKey={sortKey} sortDir={sortDir} />
                 </th>
-                {MONTHS.map((m) => (
+                {MONTHS.map((m, i) => (
                   <th
                     key={m}
-                    className="px-3 py-2.5 text-right text-xs font-medium uppercase tracking-wide min-w-[90px]"
+                    onClick={() => handleSort(i + 1)}
+                    className={`px-3 py-2.5 text-right text-xs font-medium uppercase tracking-wide min-w-[90px] ${TH_SORT}`}
                   >
                     {m}
+                    <SortIcon col={i + 1} sortKey={sortKey} sortDir={sortDir} />
                   </th>
                 ))}
-                <th className="px-3 py-2.5 text-right text-xs font-medium uppercase tracking-wide min-w-[110px] border-l">
+                <th
+                  onClick={() => handleSort("total")}
+                  className={`px-3 py-2.5 text-right text-xs font-medium uppercase tracking-wide min-w-[110px] border-l ${TH_SORT}`}
+                >
                   Total
+                  <SortIcon col="total" sortKey={sortKey} sortDir={sortDir} />
                 </th>
               </tr>
             </thead>

@@ -8,6 +8,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
@@ -15,8 +20,11 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
 } from "@/components/ui/sidebar";
-import { ArrowLeftRight, BarChart2, BookOpen, Building2, Home, Landmark, LogOut, Wallet } from "lucide-react";
+import { ArrowLeftRight, BarChart2, BookOpen, Building2, ChevronRight, Home, Landmark, LogOut, Wallet } from "lucide-react";
 import { signOut } from "next-auth/react";
 import Link from "next/link";
 
@@ -89,14 +97,35 @@ export function AppSidebar({ user }: AppSidebarProps) {
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
-          <SidebarMenuItem>
-            <SidebarMenuButton asChild>
-              <Link href="/reports/coa">
-                <BarChart2 className="h-4 w-4" />
-                <span>COA Report</span>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
+          <Collapsible asChild defaultOpen className="group/reports">
+            <SidebarMenuItem>
+              <CollapsibleTrigger asChild>
+                <SidebarMenuButton>
+                  <BarChart2 className="h-4 w-4" />
+                  <span>Reports</span>
+                  <ChevronRight className="ml-auto h-4 w-4 transition-transform group-data-[state=open]/reports:rotate-90" />
+                </SidebarMenuButton>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <SidebarMenuSub>
+                  <SidebarMenuSubItem>
+                    <SidebarMenuSubButton asChild>
+                      <Link href="/reports/coa">
+                        <span>COA Report</span>
+                      </Link>
+                    </SidebarMenuSubButton>
+                  </SidebarMenuSubItem>
+                  <SidebarMenuSubItem>
+                    <SidebarMenuSubButton asChild>
+                      <Link href="/reports/recipients">
+                        <span>Recipient Report</span>
+                      </Link>
+                    </SidebarMenuSubButton>
+                  </SidebarMenuSubItem>
+                </SidebarMenuSub>
+              </CollapsibleContent>
+            </SidebarMenuItem>
+          </Collapsible>
         </SidebarMenu>
       </SidebarContent>
 
