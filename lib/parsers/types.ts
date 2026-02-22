@@ -3,9 +3,10 @@ export interface ParsedRow {
   date:             string;        // "YYYY-MM-DD"
   description:      string;        // recipient (uppercase)
   amount:           number;
-  // Enriched server-side after alias lookup:
-  suggestedCoaCode: string | null;
-  suggestedCoaName: string | null;
+  // Enriched server-side after alias lookup / AI fallback:
+  suggestedCoaCode:  string | null;
+  suggestedCoaName:  string | null;
+  suggestionSource:  "alias" | "ai" | null;
 }
 
 export interface FileParser {

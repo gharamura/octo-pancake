@@ -23,7 +23,11 @@ import { useEffect, useState } from "react";
 // ---------------------------------------------------------------------------
 
 interface RecipientFormProps {
-  record?: RecipientDetail;
+  record?:         RecipientDetail;
+  defaultName?:    string;
+  defaultAlias?:   string;
+  defaultCoaCode?: string;
+  defaultCoaName?: string;
   onSuccess: () => void;
 }
 
@@ -31,11 +35,11 @@ interface RecipientFormProps {
 // Component
 // ---------------------------------------------------------------------------
 
-export function RecipientForm({ record, onSuccess }: RecipientFormProps) {
+export function RecipientForm({ record, defaultName, defaultAlias, defaultCoaCode, defaultCoaName, onSuccess }: RecipientFormProps) {
   const isEdit = !!record;
 
   // Basic fields
-  const [name,     setName]     = useState(record?.name     ?? "");
+  const [name,     setName]     = useState(record?.name ?? defaultName ?? "");
   const [notes,    setNotes]    = useState(record?.notes    ?? "");
   const [isActive, setIsActive] = useState(record?.isActive ?? true);
 
@@ -43,6 +47,10 @@ export function RecipientForm({ record, onSuccess }: RecipientFormProps) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting,      setDeleting]      = useState(false);
   const [error,         setError]         = useState<string | null>(null);
+
+  // COA suggestion chip (create mode only)
+  const [coaSuggestionDismissed, setCoaSuggestionDismissed] = useState(false);
+  const activeCoaCode = !isEdit && !coaSuggestionDismissed ? defaultCoaCode : undefined;
 
   // Aliases (edit only)
   const [aliases,    setAliases]    = useState<string[]>(record?.aliases.map((a) => a.alias) ?? []);
@@ -103,6 +111,23 @@ export function RecipientForm({ record, onSuccess }: RecipientFormProps) {
         const data = await res.json();
         setError(data.error ?? "Something went wrong.");
         return;
+      }
+      if (!isEdit && (defaultAlias || activeCoaCode)) {
+        const { id: newId } = await res.json();
+        if (defaultAlias) {
+          await fetch(`/api/recipients/${newId}/aliases`, {
+            method:  "POST",
+            headers: { "Content-Type": "application/json" },
+            body:    JSON.stringify({ alias: defaultAlias.toUpperCase() }),
+          });
+        }
+        if (activeCoaCode) {
+          await fetch(`/api/recipients/${newId}/coa`, {
+            method:  "POST",
+            headers: { "Content-Type": "application/json" },
+            body:    JSON.stringify({ coaCode: activeCoaCode, isPrimary: true }),
+          });
+        }
       }
       onSuccess();
     } catch {
@@ -305,6 +330,25 @@ export function RecipientForm({ record, onSuccess }: RecipientFormProps) {
               onCheckedChange={setIsActive}
             />
             <Label htmlFor="isActive">Active</Label>
+          </div>
+        )}
+
+        {!isEdit && defaultCoaCode && (
+          <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm">
+            <span className="text-xs text-muted-foreground">COA will be linked:</span>
+            <span className="font-mono text-xs font-medium">{defaultCoaCode}</span>
+            {defaultCoaName && <span className="truncate text-xs text-muted-foreground">· {defaultCoaName}</span>}
+            {!coaSuggestionDismissed ? (
+              <button
+                type="button"
+                className="ml-auto text-muted-foreground hover:text-destructive transition-colors"
+                onClick={() => setCoaSuggestionDismissed(true)}
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            ) : (
+              <span className="ml-auto text-xs text-muted-foreground line-through">dismissed</span>
+            )}
           </div>
         )}
 

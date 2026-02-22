@@ -1,6 +1,7 @@
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { coaAccounts, recipientAliases, recipientCoa } from "@/lib/db/schema";
+import { suggestCoaForDescriptions } from "@/lib/ai/suggest-coa";
 import { parserMap } from "@/lib/parsers";
 import { and, eq, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
@@ -47,12 +48,31 @@ export async function POST(req: Request) {
 
   const coaByAlias = new Map(matches.map((m) => [m.alias, { coaCode: m.coaCode, coaName: m.coaName }]));
 
+  // ── AI fallback for unmatched descriptions ──────────────────────────────
+  const unmatched = descriptions.filter((d) => !coaByAlias.has(d));
+
+  let aiSuggestions = new Map<string, { coaCode: string; coaName: string } | null>();
+  if (unmatched.length > 0 && process.env.ANTHROPIC_API_KEY) {
+    const allCoa = await db
+      .select({ code: coaAccounts.code, name: coaAccounts.name })
+      .from(coaAccounts)
+      .where(eq(coaAccounts.isActive, true));
+
+    aiSuggestions = await suggestCoaForDescriptions(unmatched, allCoa);
+  }
+
+  // ── Merge results ───────────────────────────────────────────────────────
   const enriched = rows.map((r) => {
-    const match = coaByAlias.get(r.description);
+    const aliasMatch = coaByAlias.get(r.description);
+    if (aliasMatch) {
+      return { ...r, suggestedCoaCode: aliasMatch.coaCode, suggestedCoaName: aliasMatch.coaName, suggestionSource: "alias" as const };
+    }
+    const aiMatch = aiSuggestions.get(r.description) ?? null;
     return {
       ...r,
-      suggestedCoaCode: match?.coaCode ?? null,
-      suggestedCoaName: match?.coaName ?? null,
+      suggestedCoaCode: aiMatch?.coaCode ?? null,
+      suggestedCoaName: aiMatch?.coaName ?? null,
+      suggestionSource: aiMatch ? ("ai" as const) : null,
     };
   });
 

@@ -13,6 +13,7 @@
     "db:seed-coa": "tsx --env-file=.env.local lib/db/seed-coa.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.78.0",
     "@auth/drizzle-adapter": "^1.11.1",
     "@neondatabase/serverless": "^1.0.2",
     "@tanstack/react-table": "^8.21.3",

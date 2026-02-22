@@ -340,6 +340,11 @@ export function ImportTransactions() {
                         <span className="flex items-center gap-1.5 text-xs">
                           <span className="font-mono text-muted-foreground">{row.suggestedCoaCode}</span>
                           <span className="truncate max-w-[160px]">{row.suggestedCoaName}</span>
+                          {row.suggestionSource === "ai" && (
+                            <span className="rounded bg-blue-100 px-1 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
+                              AI
+                            </span>
+                          )}
                         </span>
                       ) : (
                         <span className="text-xs text-muted-foreground">—</span>

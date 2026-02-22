@@ -43,6 +43,7 @@ export const btgCheckingParser: FileParser = {
         amount,
         suggestedCoaCode: null,
         suggestedCoaName: null,
+        suggestionSource: null,
       });
     }
 
