@@ -61,7 +61,10 @@ export class TransactionRepository {
   }
 
   async create(data: NewTransaction): Promise<Transaction> {
-    const [row] = await db.insert(transactions).values(data).returning();
+    const [row] = await db
+      .insert(transactions)
+      .values({ ...data, recipient: data.recipient?.toUpperCase() ?? null })
+      .returning();
     return row;
   }
 
@@ -71,7 +74,7 @@ export class TransactionRepository {
   ): Promise<Transaction | null> {
     const [row] = await db
       .update(transactions)
-      .set(data)
+      .set({ ...data, recipient: data.recipient?.toUpperCase() ?? data.recipient })
       .where(eq(transactions.id, id))
       .returning();
     return row ?? null;

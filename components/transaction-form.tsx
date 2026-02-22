@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/select";
 import type { FinancialAccount, CoaAccount } from "@/lib/db/schema";
 import { Check, ChevronsUpDown } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -53,14 +53,16 @@ export interface TransactionRow {
 interface TransactionFormProps {
   transaction?: TransactionRow;
   onSuccess: () => void;
+  onCreated?: () => void;
 }
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export function TransactionForm({ transaction, onSuccess }: TransactionFormProps) {
+export function TransactionForm({ transaction, onSuccess, onCreated }: TransactionFormProps) {
   const isEdit = !!transaction;
+  const dateInputRef = useRef<HTMLInputElement>(null);
 
   const [transactionDate, setTransactionDate] = useState(
     toDateInput(transaction?.transactionDate)
@@ -142,7 +144,18 @@ export function TransactionForm({ transaction, onSuccess }: TransactionFormProps
         return;
       }
 
-      onSuccess();
+      if (isEdit) {
+        onSuccess();
+      } else {
+        setTransactionDate("");
+        setAccountingDate("");
+        setCoaCode("__none__");
+        setAmount("");
+        setRecipient("");
+        setNotes("");
+        onCreated ? onCreated() : onSuccess();
+        setTimeout(() => dateInputRef.current?.focus(), 0);
+      }
     } catch {
       setError("Something went wrong.");
     } finally {
@@ -191,6 +204,7 @@ export function TransactionForm({ transaction, onSuccess }: TransactionFormProps
       <div className="space-y-1.5">
         <Label htmlFor="transactionDate">Transaction Date</Label>
         <Input
+          ref={dateInputRef}
           id="transactionDate"
           type="date"
           value={transactionDate}

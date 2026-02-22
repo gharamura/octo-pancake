@@ -83,6 +83,13 @@ export function TransactionTable() {
     fetchTransactions();
   }, [fetchTransactions]);
 
+  const handleCreated = useCallback(() => {
+    fetch("/api/transactions")
+      .then((r) => r.json())
+      .then((data: TransactionRow[]) => setTransactions(data))
+      .catch(() => {});
+  }, []);
+
   const flipSign = useCallback((row: TransactionRow) => {
     const newAmount = String(-parseFloat(row.amount));
     // Optimistic update
@@ -289,6 +296,7 @@ export function TransactionTable() {
               key={sheet.mode === "edit" ? sheet.transaction?.id : "create"}
               transaction={sheet.transaction}
               onSuccess={handleFormSuccess}
+              onCreated={handleCreated}
             />
           </div>
         </SheetContent>
