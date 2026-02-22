@@ -94,7 +94,8 @@ export const financialAccounts = pgTable("financial_accounts", {
   type: text("type").$type<FinancialAccountType>().notNull(),
   institution: text("institution"),
   owner: text("owner"),
-  accountNumber: text("account_number"),
+  accountNumber:  text("account_number"),
+  currency:       text("currency").notNull().default("BRL"),
   openingBalance: numeric("opening_balance", { precision: 15, scale: 2 })
     .notNull()
     .default("0"),
@@ -127,6 +128,7 @@ export const transactions = pgTable(
     accountId:       text("account_id").notNull(),
     coaCode:         text("coa_code"),
     amount:          numeric("amount", { precision: 15, scale: 2 }).notNull(),
+    currency:        text("currency").notNull().default("BRL"),
     recipient:       text("recipient"),
     notes:           text("notes"),
     createdAt: timestamp("created_at").defaultNow().notNull(),

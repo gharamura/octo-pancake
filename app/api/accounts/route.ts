@@ -18,7 +18,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { name, type, institution, owner, accountNumber, openingBalance, notes, isActive } =
+  const { name, type, institution, owner, accountNumber, currency, openingBalance, notes, isActive } =
     await req.json();
 
   if (!name || !type) {
@@ -31,6 +31,7 @@ export async function POST(req: Request) {
     institution: institution ?? null,
     owner: owner ?? null,
     accountNumber: accountNumber ?? null,
+    currency: currency ?? "BRL",
     openingBalance: openingBalance ?? "0",
     notes: notes ?? null,
     isActive: isActive ?? true,

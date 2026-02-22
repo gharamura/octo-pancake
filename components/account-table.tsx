@@ -288,13 +288,23 @@ export function AccountTable() {
         ),
       },
       {
+        accessorKey: "currency",
+        header: "Currency",
+        cell: ({ row }) => (
+          <span className="font-mono text-xs font-medium">
+            {row.getValue("currency")}
+          </span>
+        ),
+      },
+      {
         accessorKey: "openingBalance",
         header: "Opening Balance",
         cell: ({ row }) => {
-          const val = parseFloat(row.getValue("openingBalance") ?? "0");
+          const val      = parseFloat(row.getValue("openingBalance") ?? "0");
+          const currency = (row.original.currency ?? "BRL") as string;
           return (
             <span className="tabular-nums">
-              {val.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+              {val.toLocaleString("pt-BR", { style: "currency", currency })}
             </span>
           );
         },

@@ -44,11 +44,14 @@ export interface TransactionRow {
   accountId: string;
   coaCode: string | null;
   amount: string;
+  currency: string;
   recipient: string | null;
   notes: string | null;
   accountName: string | null;
   coaName: string | null;
 }
+
+const CURRENCIES = ["BRL", "USD", "EUR", "GBP", "ARS", "CLP", "COP", "MXN", "UYU"];
 
 interface TransactionFormProps {
   transaction?: TransactionRow;
@@ -73,6 +76,7 @@ export function TransactionForm({ transaction, onSuccess, onCreated }: Transacti
   const [accountId,  setAccountId]  = useState(transaction?.accountId  ?? "");
   const [coaCode,    setCoaCode]    = useState(transaction?.coaCode    ?? "__none__");
   const [amount,     setAmount]     = useState(transaction?.amount     ?? "");
+  const [currency,   setCurrency]   = useState(transaction?.currency   ?? "BRL");
   const [recipient,  setRecipient]  = useState(transaction?.recipient  ?? "");
   const [notes,      setNotes]      = useState(transaction?.notes      ?? "");
 
@@ -125,6 +129,7 @@ export function TransactionForm({ transaction, onSuccess, onCreated }: Transacti
         accountId,
         coaCode: coaCode === "__none__" ? null : coaCode || null,
         amount,
+        currency,
         recipient: recipient || null,
         notes: notes || null,
       };
@@ -151,6 +156,7 @@ export function TransactionForm({ transaction, onSuccess, onCreated }: Transacti
         setAccountingDate("");
         setCoaCode("__none__");
         setAmount("");
+        setCurrency("BRL");
         setRecipient("");
         setNotes("");
         onCreated ? onCreated() : onSuccess();
@@ -223,19 +229,34 @@ export function TransactionForm({ transaction, onSuccess, onCreated }: Transacti
         />
       </div>
 
-      <div className="space-y-1.5">
-        <Label htmlFor="amount">Amount</Label>
-        <Input
-          id="amount"
-          type="number"
-          step="0.01"
-          value={amount}
-          onChange={(e) => setAmount(e.target.value)}
-          placeholder="0.00"
-          required
-        />
-        <p className="text-xs text-muted-foreground">Use a negative value for expenses.</p>
+      <div className="grid grid-cols-[1fr_auto] gap-3 items-end">
+        <div className="space-y-1.5">
+          <Label htmlFor="amount">Amount</Label>
+          <Input
+            id="amount"
+            type="number"
+            step="0.01"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            placeholder="0.00"
+            required
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label>Currency</Label>
+          <Select value={currency} onValueChange={setCurrency}>
+            <SelectTrigger className="w-24">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {CURRENCIES.map((c) => (
+                <SelectItem key={c} value={c}>{c}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
+      <p className="text-xs text-muted-foreground -mt-3">Use a negative value for expenses.</p>
 
       {isCredit && (
         <div className="space-y-1.5">

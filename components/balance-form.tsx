@@ -127,7 +127,13 @@ export function BalanceForm({ record, onSuccess }: BalanceFormProps) {
           <SelectContent>
             {accounts.map((a) => (
               <SelectItem key={a.id} value={a.id}>
-                {a.name}{a.institution ? ` · ${a.institution}` : ""}
+                <span className="flex items-center gap-2">
+                  <span>{a.name}</span>
+                  <span className="text-xs text-muted-foreground capitalize">{a.type.replace("_", " ")}</span>
+                  {a.accountNumber && (
+                    <span className="font-mono text-xs text-muted-foreground">·&nbsp;{a.accountNumber}</span>
+                  )}
+                </span>
               </SelectItem>
             ))}
           </SelectContent>

@@ -15,6 +15,7 @@ export type TransactionRow = {
   accountId: string;
   coaCode: string | null;
   amount: string;
+  currency: string;
   recipient: string | null;
   notes: string | null;
   createdAt: Date | string;
@@ -32,6 +33,7 @@ export class TransactionRepository {
       accountId:       transactions.accountId,
       coaCode:         transactions.coaCode,
       amount:          transactions.amount,
+      currency:        transactions.currency,
       recipient:       transactions.recipient,
       notes:           transactions.notes,
       createdAt:       transactions.createdAt,

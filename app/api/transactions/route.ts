@@ -18,7 +18,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { transactionDate, accountingDate, accountId, coaCode, amount, recipient, notes } =
+  const { transactionDate, accountingDate, accountId, coaCode, amount, currency, recipient, notes } =
     await req.json();
 
   if (!transactionDate || !accountId || amount === undefined || amount === null || amount === "") {
@@ -34,6 +34,7 @@ export async function POST(req: Request) {
     accountId,
     coaCode:   coaCode   || null,
     amount:    String(amount),
+    currency:  currency  || "BRL",
     recipient: recipient || null,
     notes:     notes     || null,
   });

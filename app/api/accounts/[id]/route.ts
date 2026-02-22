@@ -12,7 +12,7 @@ export async function PATCH(
   }
 
   const { id } = await params;
-  const { name, type, institution, owner, accountNumber, openingBalance, notes, isActive } =
+  const { name, type, institution, owner, accountNumber, currency, openingBalance, notes, isActive } =
     await req.json();
 
   if (!name || !type) {
@@ -25,6 +25,7 @@ export async function PATCH(
     institution: institution ?? null,
     owner: owner ?? null,
     accountNumber: accountNumber ?? null,
+    currency: currency ?? "BRL",
     openingBalance,
     notes: notes ?? null,
     isActive,

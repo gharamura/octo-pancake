@@ -14,6 +14,8 @@ import { Switch } from "@/components/ui/switch";
 import { type FinancialAccount, type FinancialAccountType } from "@/lib/db/schema";
 import { useState } from "react";
 
+const CURRENCIES = ["BRL", "USD", "EUR", "GBP", "ARS", "CLP", "COP", "MXN", "UYU"];
+
 const TYPES: { value: FinancialAccountType; label: string }[] = [
   { value: "savings",     label: "Savings" },
   { value: "checking",    label: "Checking" },
@@ -36,6 +38,7 @@ export function AccountForm({ account, onSuccess }: AccountFormProps) {
   const [institution, setInstitution] = useState(account?.institution ?? "");
   const [owner, setOwner] = useState(account?.owner ?? "");
   const [accountNumber, setAccountNumber] = useState(account?.accountNumber ?? "");
+  const [currency, setCurrency] = useState(account?.currency ?? "BRL");
   const [openingBalance, setOpeningBalance] = useState(account?.openingBalance ?? "0");
   const [notes, setNotes] = useState(account?.notes ?? "");
   const [isActive, setIsActive] = useState(account?.isActive ?? true);
@@ -55,6 +58,7 @@ export function AccountForm({ account, onSuccess }: AccountFormProps) {
         institution: institution || null,
         owner: owner || null,
         accountNumber: accountNumber || null,
+        currency,
         openingBalance,
         notes: notes || null,
         isActive,
@@ -161,6 +165,20 @@ export function AccountForm({ account, onSuccess }: AccountFormProps) {
           placeholder="****1234"
           className="font-mono"
         />
+      </div>
+
+      <div className="space-y-1.5">
+        <Label>Currency</Label>
+        <Select value={currency} onValueChange={setCurrency}>
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {CURRENCIES.map((c) => (
+              <SelectItem key={c} value={c}>{c}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="space-y-1.5">

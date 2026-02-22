@@ -105,6 +105,7 @@ export function TransactionTable() {
         accountId:        row.accountId,
         coaCode:          row.coaCode,
         amount:           newAmount,
+        currency:         row.currency,
         recipient:        row.recipient,
         notes:            row.notes,
       }),
@@ -138,12 +139,13 @@ export function TransactionTable() {
         accessorKey: "amount",
         header: "Amount",
         cell: ({ row }) => {
-          const val = parseFloat(row.getValue("amount") ?? "0");
-          const color = val >= 0 ? "text-green-700 dark:text-green-400" : "text-red-600 dark:text-red-400";
+          const val      = parseFloat(row.getValue("amount") ?? "0");
+          const currency = row.original.currency ?? "BRL";
+          const color    = val >= 0 ? "text-green-700 dark:text-green-400" : "text-red-600 dark:text-red-400";
           return (
             <div className="flex items-center gap-1">
               <span className={`tabular-nums font-medium ${color}`}>
-                {val.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                {val.toLocaleString("pt-BR", { style: "currency", currency })}
               </span>
               <Button
                 variant="ghost"
