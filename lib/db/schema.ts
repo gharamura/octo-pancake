@@ -1,4 +1,4 @@
-import { AnyPgColumn, boolean, index, integer, numeric, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { AnyPgColumn, boolean, date, index, integer, numeric, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
   id: text("id")
@@ -109,3 +109,39 @@ export const financialAccounts = pgTable("financial_accounts", {
 
 export type FinancialAccount = typeof financialAccounts.$inferSelect;
 export type NewFinancialAccount = typeof financialAccounts.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Transactions
+// Global shared table — no userId.
+// accountId and coaCode are soft references (indexes only, no FK constraints).
+// ---------------------------------------------------------------------------
+
+export const transactions = pgTable(
+  "transactions",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    transactionDate: date("transaction_date", { mode: "date" }).notNull(),
+    accountingDate:  date("accounting_date",  { mode: "date" }),
+    accountId:       text("account_id").notNull(),
+    coaCode:         text("coa_code"),
+    amount:          numeric("amount", { precision: 15, scale: 2 }).notNull(),
+    recipient:       text("recipient"),
+    notes:           text("notes"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .notNull()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [
+    index("transactions_account_id_idx").on(t.accountId),
+    index("transactions_coa_code_idx").on(t.coaCode),
+    index("transactions_transaction_date_idx").on(t.transactionDate),
+    index("transactions_accounting_date_idx").on(t.accountingDate),
+  ]
+);
+
+export type Transaction    = typeof transactions.$inferSelect;
+export type NewTransaction = typeof transactions.$inferInsert;
