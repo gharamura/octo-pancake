@@ -17,6 +17,14 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Sheet,
   SheetContent,
   SheetHeader,
@@ -24,43 +32,8 @@ import {
 } from "@/components/ui/sheet";
 import { AccountForm } from "@/components/account-form";
 import { type FinancialAccount, type FinancialAccountType } from "@/lib/db/schema";
-import { Pencil, Plus } from "lucide-react";
+import { ChevronDown, ListFilter, Pencil, Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-
-// ---------------------------------------------------------------------------
-// Pill helper
-// ---------------------------------------------------------------------------
-
-function FilterPill({
-  label,
-  active,
-  className,
-  onClick,
-  onDoubleClick,
-}: {
-  label: string;
-  active: boolean;
-  className?: string;
-  onClick: () => void;
-  onDoubleClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      onDoubleClick={onDoubleClick}
-      className={[
-        "inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium transition-opacity select-none",
-        active ? "" : "opacity-30",
-        className,
-      ]
-        .filter(Boolean)
-        .join(" ")}
-    >
-      {label}
-    </button>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Type badge
@@ -85,6 +58,61 @@ const TYPE_BADGE: Record<FinancialAccountType, string> = {
 };
 
 // ---------------------------------------------------------------------------
+// Filter header
+// ---------------------------------------------------------------------------
+
+function FilterHeader<T extends string>({
+  label,
+  options,
+  selected,
+  onToggle,
+  onClear,
+}: {
+  label: string;
+  options: { value: T; label: string }[];
+  selected: T[];
+  onToggle: (value: T) => void;
+  onClear: () => void;
+}) {
+  const active = selected.length > 0;
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button className="flex items-center gap-1 text-xs font-medium uppercase tracking-wide hover:text-foreground transition-colors">
+          {label}
+          {active
+            ? <ListFilter className="h-3 w-3 text-primary" />
+            : <ChevronDown className="h-3 w-3 opacity-40" />}
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="min-w-[160px]">
+        {options.map((opt) => (
+          <DropdownMenuCheckboxItem
+            key={opt.value}
+            checked={selected.includes(opt.value)}
+            onCheckedChange={() => onToggle(opt.value)}
+            onSelect={(e) => e.preventDefault()}
+          >
+            {opt.label}
+          </DropdownMenuCheckboxItem>
+        ))}
+        {active && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="justify-center text-xs text-muted-foreground"
+              onSelect={onClear}
+            >
+              Clear filter
+            </DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Sheet state
 // ---------------------------------------------------------------------------
 
@@ -106,15 +134,37 @@ export function AccountTable() {
   const [selectedOwners, setSelectedOwners] = useState<string[]>([]);
   const [selectedInstitutions, setSelectedInstitutions] = useState<string[]>([]);
 
-  const ownerOptions = useMemo(
-    () => Array.from(new Set(accounts.map((a) => a.owner).filter(Boolean) as string[])).sort(),
-    [accounts]
-  );
+  // ---------------------------------------------------------------------------
+  // Faceted filter options
+  // Each filter's available options are derived from accounts that already
+  // match the OTHER two active filters, so any selectable value is guaranteed
+  // to produce at least one result.
+  // ---------------------------------------------------------------------------
 
-  const institutionOptions = useMemo(
-    () => Array.from(new Set(accounts.map((a) => a.institution).filter(Boolean) as string[])).sort(),
-    [accounts]
-  );
+  const typeFilterBase = useMemo(() => {
+    let data = accounts;
+    if (selectedOwners.length)       data = data.filter((a) => a.owner && selectedOwners.includes(a.owner));
+    if (selectedInstitutions.length) data = data.filter((a) => a.institution && selectedInstitutions.includes(a.institution));
+    return data;
+  }, [accounts, selectedOwners, selectedInstitutions]);
+
+  const ownerFilterBase = useMemo(() => {
+    let data = accounts;
+    if (selectedTypes.length)        data = data.filter((a) => selectedTypes.includes(a.type));
+    if (selectedInstitutions.length) data = data.filter((a) => a.institution && selectedInstitutions.includes(a.institution));
+    return data;
+  }, [accounts, selectedTypes, selectedInstitutions]);
+
+  const institutionFilterBase = useMemo(() => {
+    let data = accounts;
+    if (selectedTypes.length)  data = data.filter((a) => selectedTypes.includes(a.type));
+    if (selectedOwners.length) data = data.filter((a) => a.owner && selectedOwners.includes(a.owner));
+    return data;
+  }, [accounts, selectedTypes, selectedOwners]);
+
+  const availableTypes        = useMemo(() => new Set(typeFilterBase.map((a) => a.type)), [typeFilterBase]);
+  const availableOwners       = useMemo(() => Array.from(new Set(ownerFilterBase.map((a) => a.owner).filter(Boolean) as string[])).sort(), [ownerFilterBase]);
+  const availableInstitutions = useMemo(() => Array.from(new Set(institutionFilterBase.map((a) => a.institution).filter(Boolean) as string[])).sort(), [institutionFilterBase]);
 
   const fetchAccounts = useCallback(() => {
     setLoading(true);
@@ -133,15 +183,15 @@ export function AccountTable() {
 
   const toggleType = useCallback((t: FinancialAccountType) =>
     setSelectedTypes((prev) => prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]), []);
-  const soloType = useCallback((t: FinancialAccountType) => setSelectedTypes([t]), []);
+  const clearTypes = useCallback(() => setSelectedTypes([]), []);
 
   const toggleOwner = useCallback((o: string) =>
     setSelectedOwners((prev) => prev.includes(o) ? prev.filter((x) => x !== o) : [...prev, o]), []);
-  const soloOwner = useCallback((o: string) => setSelectedOwners([o]), []);
+  const clearOwners = useCallback(() => setSelectedOwners([]), []);
 
   const toggleInstitution = useCallback((i: string) =>
     setSelectedInstitutions((prev) => prev.includes(i) ? prev.filter((x) => x !== i) : [...prev, i]), []);
-  const soloInstitution = useCallback((i: string) => setSelectedInstitutions([i]), []);
+  const clearInstitutions = useCallback(() => setSelectedInstitutions([]), []);
 
   const filteredAccounts = useMemo(() => {
     let data = accounts;
@@ -162,6 +212,13 @@ export function AccountTable() {
     fetchAccounts();
   }, [fetchAccounts]);
 
+  const typeOptions = useMemo(
+    () => (Object.keys(TYPE_LABELS) as FinancialAccountType[])
+      .filter((v) => availableTypes.has(v))
+      .map((v) => ({ value: v, label: TYPE_LABELS[v] })),
+    [availableTypes]
+  );
+
   const columns = useMemo<ColumnDef<FinancialAccount>[]>(
     () => [
       {
@@ -173,7 +230,15 @@ export function AccountTable() {
       },
       {
         accessorKey: "type",
-        header: "Type",
+        header: () => (
+          <FilterHeader
+            label="Type"
+            options={typeOptions}
+            selected={selectedTypes}
+            onToggle={toggleType}
+            onClear={clearTypes}
+          />
+        ),
         cell: ({ row }) => {
           const t = row.getValue("type") as FinancialAccountType;
           return (
@@ -185,14 +250,30 @@ export function AccountTable() {
       },
       {
         accessorKey: "institution",
-        header: "Institution",
+        header: () => (
+          <FilterHeader
+            label="Institution"
+            options={availableInstitutions.map((v: string) => ({ value: v, label: v }))}
+            selected={selectedInstitutions}
+            onToggle={toggleInstitution}
+            onClear={clearInstitutions}
+          />
+        ),
         cell: ({ row }) => (
           <span className="text-muted-foreground">{row.getValue("institution") ?? "—"}</span>
         ),
       },
       {
         accessorKey: "owner",
-        header: "Owner",
+        header: () => (
+          <FilterHeader
+            label="Owner"
+            options={availableOwners.map((v: string) => ({ value: v, label: v }))}
+            selected={selectedOwners}
+            onToggle={toggleOwner}
+            onClear={clearOwners}
+          />
+        ),
         cell: ({ row }) => (
           <span className="text-muted-foreground">{row.getValue("owner") ?? "—"}</span>
         ),
@@ -246,7 +327,7 @@ export function AccountTable() {
         ),
       },
     ],
-    [openEdit]
+    [openEdit, typeOptions, selectedTypes, toggleType, clearTypes, availableInstitutions, selectedInstitutions, toggleInstitution, clearInstitutions, availableOwners, selectedOwners, toggleOwner, clearOwners]
   );
 
   const table = useReactTable({
@@ -276,56 +357,8 @@ export function AccountTable() {
 
   return (
     <>
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex flex-wrap gap-x-4 gap-y-2">
-          {/* Type filters */}
-          <div className="flex flex-wrap items-center gap-1.5">
-            {(Object.keys(TYPE_LABELS) as FinancialAccountType[]).map((t) => (
-              <FilterPill
-                key={t}
-                label={TYPE_LABELS[t]}
-                active={selectedTypes.length === 0 || selectedTypes.includes(t)}
-                className={TYPE_BADGE[t]}
-                onClick={() => toggleType(t)}
-                onDoubleClick={() => soloType(t)}
-              />
-            ))}
-          </div>
-
-          {/* Owner filters */}
-          {ownerOptions.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5">
-              {ownerOptions.map((o) => (
-                <FilterPill
-                  key={o}
-                  label={o}
-                  active={selectedOwners.length === 0 || selectedOwners.includes(o)}
-                  className="bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
-                  onClick={() => toggleOwner(o)}
-                  onDoubleClick={() => soloOwner(o)}
-                />
-              ))}
-            </div>
-          )}
-
-          {/* Institution filters */}
-          {institutionOptions.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5">
-              {institutionOptions.map((i) => (
-                <FilterPill
-                  key={i}
-                  label={i}
-                  active={selectedInstitutions.length === 0 || selectedInstitutions.includes(i)}
-                  className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
-                  onClick={() => toggleInstitution(i)}
-                  onDoubleClick={() => soloInstitution(i)}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-
-        <Button variant="success" size="sm" onClick={openCreate} className="shrink-0">
+      <div className="flex justify-end">
+        <Button variant="success" size="sm" onClick={openCreate}>
           <Plus className="h-4 w-4 mr-1" />
           New Account
         </Button>
