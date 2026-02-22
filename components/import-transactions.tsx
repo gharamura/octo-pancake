@@ -19,8 +19,9 @@ import { useEffect, useRef, useState } from "react";
 // ---------------------------------------------------------------------------
 
 const AVAILABLE_PARSERS = [
-  { id: "btg-checking",          name: "BTG Pactual – Extrato",  accept: ".xls,.xlsx" },
-  { id: "contabilizei-checking", name: "Contabilizei – Extrato", accept: ".csv"       },
+  { id: "btg-checking",          name: "BTG Pactual – Extrato",          accept: ".xls,.xlsx" },
+  { id: "contabilizei-checking", name: "Contabilizei – Extrato",         accept: ".csv"       },
+  { id: "itau-checking",         name: "Itaú – Extrato Conta Corrente",  accept: ".pdf"       },
 ];
 
 // ---------------------------------------------------------------------------

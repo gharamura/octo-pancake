@@ -24,7 +24,7 @@ export async function POST(req: Request) {
   }
 
   const buffer = Buffer.from(await file.arrayBuffer());
-  const rows   = parser.parse(buffer);
+  const rows   = await parser.parse(buffer);
 
   // ── Enrich with COA suggestions via alias lookup ────────────────────────
   const descriptions = [...new Set(rows.map((r) => r.description))];

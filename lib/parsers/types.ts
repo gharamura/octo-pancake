@@ -13,5 +13,5 @@ export interface FileParser {
   id:   string;
   name: string;
   accept: string; // file input accept attribute, e.g. ".xls,.xlsx"
-  parse(buffer: Buffer): ParsedRow[];
+  parse(buffer: Buffer): ParsedRow[] | Promise<ParsedRow[]>;
 }
