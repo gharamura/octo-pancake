@@ -48,6 +48,7 @@ import {
 import { TransactionForm, type TransactionRow } from "@/components/transaction-form";
 import { LinkTransferDialog, UnlinkTransferDialog } from "@/components/link-transfer-dialog";
 import { LinkRecipientDialog } from "@/components/link-recipient-dialog";
+import { SuggestCategoriesSheet } from "@/components/suggest-categories-sheet";
 import type { RecipientDetail } from "@/lib/repositories/recipient.repository";
 import {
   ArrowUpDown,
@@ -58,6 +59,7 @@ import {
   Pencil,
   Plus,
   Search,
+  Sparkles,
   Unlink2,
   UserRound,
   X,
@@ -400,6 +402,9 @@ export function TransactionTable() {
   }>({ open: false, transaction: null });
   const [allRecipients, setAllRecipients] = useState<RecipientDetail[]>([]);
 
+  // ── Suggest categories sheet state ────────────────────────────────────────
+  const [suggestSheet, setSuggestSheet] = useState(false);
+
   // ── Data fetching ─────────────────────────────────────────────────────────
   const fetchTransactions = useCallback(() => {
     setLoading(true);
@@ -539,6 +544,11 @@ export function TransactionTable() {
 
   const uncategorizedCount = useMemo(
     () => transactions.filter((t) => !t.coaCode).length,
+    [transactions]
+  );
+
+  const uncategorizedTransactions = useMemo(
+    () => transactions.filter((t) => !t.coaCode),
     [transactions]
   );
 
@@ -852,6 +862,22 @@ export function TransactionTable() {
           )}
         </Button>
 
+        {/* Suggest categories */}
+        {uncategorizedCount > 0 && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1.5 text-xs font-normal"
+            onClick={() => setSuggestSheet(true)}
+          >
+            <Sparkles className="h-3 w-3" />
+            Suggest
+            <span className="rounded-full bg-muted px-1.5 text-[10px] font-semibold text-muted-foreground leading-4">
+              {uncategorizedCount}
+            </span>
+          </Button>
+        )}
+
         {/* Orphan transfers toggle */}
         <Button
           variant={filterOrphans ? "secondary" : "outline"}
@@ -1016,6 +1042,15 @@ export function TransactionTable() {
           }}
         />
       )}
+
+      {/* ── Suggest categories sheet ─────────────────────────────────────── */}
+      <SuggestCategoriesSheet
+        open={suggestSheet}
+        onOpenChange={setSuggestSheet}
+        uncategorized={uncategorizedTransactions}
+        allRecipients={allRecipients}
+        onApplied={fetchTransactions}
+      />
 
       {/* ── Unlink transfer dialog ────────────────────────────────────────── */}
       {unlinkDialog.transaction && (
