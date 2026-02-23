@@ -247,9 +247,11 @@ export function OrphanRecipients() {
   }
 
   function handleSuccess() {
+    const handled = sheet.orphan;
     setSheet({ open: false, orphan: null, coaCode: null, coaName: null });
-    load();
-    // Refresh recipient list so subsequent sheets have fresh data
+    // Remove the handled orphan row locally — no need to reload all
+    if (handled) setRows((prev) => prev.filter((r) => r.recipient !== handled));
+    // Refresh recipient list so subsequent sheets have fresh match suggestions
     fetch("/api/recipients")
       .then((r) => r.json())
       .then((data: RecipientDetail[]) => setAllRecipients(data))

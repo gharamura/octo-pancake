@@ -52,21 +52,27 @@ export interface TransactionRow {
   accountName: string | null;
   coaName: string | null;
   linkedRecipientName: string | null;
+  aliasRecipientId: string | null;
+  aliasRecipientName: string | null;
 }
 
 const CURRENCIES = ["BRL", "USD", "EUR", "GBP", "ARS", "CLP", "COP", "MXN", "UYU"];
 
 interface TransactionFormProps {
   transaction?: TransactionRow;
-  onSuccess: () => void;
-  onCreated?: () => void;
+  onSuccess:   () => void;
+  onCreated?:  () => void;
+  /** Called after a successful edit save — preferred over onSuccess for edit. */
+  onSaved?:    (id: string) => void;
+  /** Called after a successful delete — preferred over onSuccess for delete. */
+  onDeleted?:  (id: string) => void;
 }
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export function TransactionForm({ transaction, onSuccess, onCreated }: TransactionFormProps) {
+export function TransactionForm({ transaction, onSuccess, onCreated, onSaved, onDeleted }: TransactionFormProps) {
   const isEdit = !!transaction;
   const dateInputRef = useRef<HTMLInputElement>(null);
 
@@ -160,7 +166,7 @@ export function TransactionForm({ transaction, onSuccess, onCreated }: Transacti
       }
 
       if (isEdit) {
-        onSuccess();
+        onSaved ? onSaved(transaction.id) : onSuccess();
       } else {
         setTransactionDate("");
         setAccountingDate("");
@@ -191,7 +197,7 @@ export function TransactionForm({ transaction, onSuccess, onCreated }: Transacti
         setConfirmDelete(false);
         return;
       }
-      onSuccess();
+      onDeleted ? onDeleted(transaction.id) : onSuccess();
     } catch {
       setError("Something went wrong.");
     } finally {

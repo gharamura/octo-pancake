@@ -2,6 +2,7 @@
 
 import {
   type ColumnDef,
+  type Row,
   getCoreRowModel,
   useReactTable,
   flexRender,
@@ -61,7 +62,7 @@ import {
   UserRound,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const TRANSFER_CODES = new Set(["3110", "3120"]);
 
@@ -329,6 +330,43 @@ interface SheetState {
 }
 
 // ---------------------------------------------------------------------------
+// Memoised table row — prevents all rows re-rendering on checkbox toggle
+// ---------------------------------------------------------------------------
+
+type MemoRowProps = {
+  row:        Row<TransactionRow>;
+  isSelected: boolean;
+  onToggle:   (id: string) => void;
+};
+
+const MemoRow = memo(
+  function MemoRow({ row, isSelected, onToggle }: MemoRowProps) {
+    return (
+      <TableRow>
+        <TableCell className="pr-0">
+          <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={() => onToggle(row.original.id)}
+            onClick={(e) => e.stopPropagation()}
+            className="h-4 w-4 cursor-pointer rounded border-border accent-primary"
+          />
+        </TableCell>
+        {row.getVisibleCells().map((cell) => (
+          <TableCell key={cell.id}>
+            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+          </TableCell>
+        ))}
+      </TableRow>
+    );
+  },
+  (prev, next) =>
+    prev.row.original === next.row.original &&
+    prev.isSelected   === next.isSelected   &&
+    prev.onToggle     === next.onToggle
+);
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -345,7 +383,8 @@ export function TransactionTable() {
   const [txTo,    setTxTo]    = useState("");
   const [accFrom, setAccFrom] = useState("");
   const [accTo,   setAccTo]   = useState("");
-  const [filterOrphans, setFilterOrphans] = useState(false);
+  const [filterOrphans,        setFilterOrphans]        = useState(false);
+  const [filterUncategorized,  setFilterUncategorized]  = useState(false);
 
   // ── Transfer dialog state ─────────────────────────────────────────────────
   const [linkDialog,   setLinkDialog]   = useState<{ open: boolean; transaction: TransactionRow | null }>({ open: false, transaction: null });
@@ -410,6 +449,21 @@ export function TransactionTable() {
     fetchTransactions();
   }, [fetchTransactions]);
 
+  const handleSaved = useCallback((id: string) => {
+    setSheet((s) => ({ ...s, open: false }));
+    fetch(`/api/transactions/${id}`)
+      .then((r) => r.json())
+      .then((updated: TransactionRow) =>
+        setTransactions((prev) => prev.map((t) => (t.id === id ? updated : t)))
+      )
+      .catch(() => fetchTransactions());
+  }, [fetchTransactions]);
+
+  const handleDeleted = useCallback((id: string) => {
+    setSheet((s) => ({ ...s, open: false }));
+    setTransactions((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
   const handleCreated = useCallback(() => {
     fetch("/api/transactions")
       .then((r) => r.json())
@@ -472,19 +526,26 @@ export function TransactionTable() {
       const acDate = toISO(t.accountingDate);
       if (accFrom && (!acDate || acDate < accFrom)) return false;
       if (accTo   && (!acDate || acDate > accTo))   return false;
-      if (filterOrphans && !(TRANSFER_CODES.has(t.coaCode ?? "") && !t.transferId)) return false;
+      if (filterOrphans       && !(TRANSFER_CODES.has(t.coaCode ?? "") && !t.transferId)) return false;
+      if (filterUncategorized && !!t.coaCode) return false;
       return true;
     });
-  }, [transactions, filterAccounts, filterCoa, filterRecipient, txFrom, txTo, accFrom, accTo, filterOrphans]);
+  }, [transactions, filterAccounts, filterCoa, filterRecipient, txFrom, txTo, accFrom, accTo, filterOrphans, filterUncategorized]);
 
   const orphanCount = useMemo(
     () => transactions.filter((t) => TRANSFER_CODES.has(t.coaCode ?? "") && !t.transferId).length,
     [transactions]
   );
 
+  const uncategorizedCount = useMemo(
+    () => transactions.filter((t) => !t.coaCode).length,
+    [transactions]
+  );
+
   const anyFilter =
     filterAccounts.length > 0 || filterCoa.length > 0 ||
-    !!filterRecipient || !!txFrom || !!txTo || !!accFrom || !!accTo || filterOrphans;
+    !!filterRecipient || !!txFrom || !!txTo || !!accFrom || !!accTo ||
+    filterOrphans || filterUncategorized;
 
   const clearAll = useCallback(() => {
     setFilterAccounts([]);
@@ -493,6 +554,7 @@ export function TransactionTable() {
     setTxFrom(""); setTxTo("");
     setAccFrom(""); setAccTo("");
     setFilterOrphans(false);
+    setFilterUncategorized(false);
   }, []);
 
   const toggleAccount = useCallback((v: string) =>
@@ -535,30 +597,6 @@ export function TransactionTable() {
   // ── Columns ───────────────────────────────────────────────────────────────
   const columns = useMemo<ColumnDef<TransactionRow>[]>(
     () => [
-      {
-        id: "select",
-        header: () => (
-          <input
-            type="checkbox"
-            ref={headerCheckboxRef}
-            onChange={(e) =>
-              setSelectedIds(
-                e.target.checked ? new Set(filtered.map((t) => t.id)) : new Set()
-              )
-            }
-            className="h-4 w-4 cursor-pointer rounded border-border accent-primary"
-          />
-        ),
-        cell: ({ row }) => (
-          <input
-            type="checkbox"
-            checked={selectedIds.has(row.original.id)}
-            onChange={() => toggleRow(row.original.id)}
-            onClick={(e) => e.stopPropagation()}
-            className="h-4 w-4 cursor-pointer rounded border-border accent-primary"
-          />
-        ),
-      },
       {
         accessorKey: "transactionDate",
         header: "Date",
@@ -605,21 +643,29 @@ export function TransactionTable() {
         header: "Recipient",
         cell: ({ row }) => {
           const t = row.original;
-          const isLinked = !!t.recipientId;
+          const directLinked = !!t.recipientId;
+          const aliasLinked  = !directLinked && !!t.aliasRecipientId;
           return (
-            <div className="flex items-center gap-1 group/rec">
-              <span className={isLinked ? "font-medium text-foreground" : "text-muted-foreground"}>
-                {isLinked ? (t.linkedRecipientName ?? t.recipient ?? "—") : (t.recipient ?? "—")}
-              </span>
-              <button
-                title={isLinked ? "Change linked recipient" : "Link to recipient"}
-                className={`transition-opacity text-muted-foreground hover:text-foreground ${
-                  isLinked ? "opacity-60 hover:opacity-100" : "opacity-0 group-hover/rec:opacity-60 hover:!opacity-100"
-                }`}
-                onClick={(e) => { e.stopPropagation(); setLinkRecipientDialog({ open: true, transaction: t }); }}
-              >
-                <UserRound className="h-3.5 w-3.5" />
-              </button>
+            <div className="flex flex-col gap-0.5 group/rec">
+              <div className="flex items-center gap-1">
+                <span className={directLinked ? "font-medium text-foreground" : "text-muted-foreground"}>
+                  {directLinked ? (t.linkedRecipientName ?? t.recipient ?? "—") : (t.recipient ?? "—")}
+                </span>
+                <button
+                  title={directLinked ? "Change linked recipient" : "Link to recipient"}
+                  className={`transition-opacity text-muted-foreground hover:text-foreground ${
+                    directLinked ? "opacity-60 hover:opacity-100" : "opacity-0 group-hover/rec:opacity-60 hover:!opacity-100"
+                  }`}
+                  onClick={(e) => { e.stopPropagation(); setLinkRecipientDialog({ open: true, transaction: t }); }}
+                >
+                  <UserRound className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              {aliasLinked && (
+                <span className="text-[10px] text-primary/80 leading-none">
+                  {t.aliasRecipientName}
+                </span>
+              )}
             </div>
           );
         },
@@ -701,7 +747,7 @@ export function TransactionTable() {
         ),
       },
     ],
-    [openEdit, flipSign, setLinkDialog, setUnlinkDialog, setLinkRecipientDialog, selectedIds, toggleRow, filtered, headerCheckboxRef]
+    [openEdit, flipSign, setLinkDialog, setUnlinkDialog, setLinkRecipientDialog]
   );
 
   const table = useReactTable({
@@ -791,6 +837,21 @@ export function TransactionTable() {
           onClear={() => { setAccFrom(""); setAccTo(""); }}
         />
 
+        {/* Uncategorized toggle */}
+        <Button
+          variant={filterUncategorized ? "secondary" : "outline"}
+          size="sm"
+          className="h-8 gap-1.5 text-xs font-normal"
+          onClick={() => setFilterUncategorized((v) => !v)}
+        >
+          Uncategorized
+          {uncategorizedCount > 0 && (
+            <span className="rounded-full bg-muted px-1.5 text-[10px] font-semibold text-muted-foreground leading-4">
+              {uncategorizedCount}
+            </span>
+          )}
+        </Button>
+
         {/* Orphan transfers toggle */}
         <Button
           variant={filterOrphans ? "secondary" : "outline"}
@@ -845,6 +906,18 @@ export function TransactionTable() {
           <TableHeader className="sticky top-0 z-10 bg-background">
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
+                <TableHead className="pr-0 w-10">
+                  <input
+                    type="checkbox"
+                    ref={headerCheckboxRef}
+                    onChange={(e) =>
+                      setSelectedIds(
+                        e.target.checked ? new Set(filtered.map((t) => t.id)) : new Set()
+                      )
+                    }
+                    className="h-4 w-4 cursor-pointer rounded border-border accent-primary"
+                  />
+                </TableHead>
                 {headerGroup.headers.map((header) => (
                   <TableHead key={header.id}>
                     {flexRender(header.column.columnDef.header, header.getContext())}
@@ -856,18 +929,17 @@ export function TransactionTable() {
           <TableBody>
             {rows.length ? (
               rows.map((row) => (
-                <TableRow key={row.id}>
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id}>
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </TableCell>
-                  ))}
-                </TableRow>
+                <MemoRow
+                  key={row.id}
+                  row={row}
+                  isSelected={selectedIds.has(row.original.id)}
+                  onToggle={toggleRow}
+                />
               ))
             ) : (
               <TableRow>
                 <TableCell
-                  colSpan={columns.length}
+                  colSpan={columns.length + 1}
                   className="h-24 text-center text-muted-foreground"
                 >
                   {anyFilter ? "No transactions match the current filters." : "No transactions yet. Add one to get started."}
@@ -892,6 +964,8 @@ export function TransactionTable() {
               transaction={sheet.transaction}
               onSuccess={handleFormSuccess}
               onCreated={handleCreated}
+              onSaved={handleSaved}
+              onDeleted={handleDeleted}
             />
           </div>
         </SheetContent>

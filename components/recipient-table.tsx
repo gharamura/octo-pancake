@@ -2,6 +2,7 @@
 
 import {
   type ColumnDef,
+  type Row,
   getCoreRowModel,
   getFilteredRowModel,
   useReactTable,
@@ -27,7 +28,7 @@ import {
 } from "@/components/ui/sheet";
 import { RecipientForm } from "@/components/recipient-form";
 import { Pencil, Plus, Star } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import type { RecipientDetail } from "@/lib/repositories/recipient.repository";
 
 // ---------------------------------------------------------------------------
@@ -39,6 +40,25 @@ interface SheetState {
   mode:   "create" | "edit";
   record?: RecipientDetail;
 }
+
+// ---------------------------------------------------------------------------
+// Memoised table row
+// ---------------------------------------------------------------------------
+
+const MemoRow = memo(
+  function MemoRow({ row }: { row: Row<RecipientDetail> }) {
+    return (
+      <TableRow>
+        {row.getVisibleCells().map((cell) => (
+          <TableCell key={cell.id}>
+            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+          </TableCell>
+        ))}
+      </TableRow>
+    );
+  },
+  (prev, next) => prev.row.original === next.row.original
+);
 
 // ---------------------------------------------------------------------------
 // Component
@@ -73,6 +93,21 @@ export function RecipientTable() {
     setSheet((s) => ({ ...s, open: false }));
     fetchRecords();
   }, [fetchRecords]);
+
+  const handleSaved = useCallback((id: string) => {
+    setSheet((s) => ({ ...s, open: false }));
+    fetch(`/api/recipients/${id}`)
+      .then((r) => r.json())
+      .then((updated: RecipientDetail) =>
+        setRecords((prev) => prev.map((r) => (r.id === id ? updated : r)))
+      )
+      .catch(() => fetchRecords());
+  }, [fetchRecords]);
+
+  const handleDeleted = useCallback((id: string) => {
+    setSheet((s) => ({ ...s, open: false }));
+    setRecords((prev) => prev.filter((r) => r.id !== id));
+  }, []);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -213,13 +248,7 @@ export function RecipientTable() {
           <TableBody>
             {rows.length ? (
               rows.map((row) => (
-                <TableRow key={row.id}>
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id}>
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </TableCell>
-                  ))}
-                </TableRow>
+                <MemoRow key={row.id} row={row} />
               ))
             ) : (
               <TableRow>
@@ -247,6 +276,8 @@ export function RecipientTable() {
               key={sheet.mode === "edit" ? sheet.record?.id : "create"}
               record={sheet.record}
               onSuccess={handleFormSuccess}
+              onSaved={handleSaved}
+              onDeleted={handleDeleted}
             />
           </div>
         </SheetContent>

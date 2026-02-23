@@ -28,14 +28,18 @@ interface RecipientFormProps {
   defaultAlias?:   string;
   defaultCoaCode?: string;
   defaultCoaName?: string;
-  onSuccess: () => void;
+  onSuccess:  () => void;
+  /** Called after a successful edit save — preferred over onSuccess for edit. */
+  onSaved?:   (id: string) => void;
+  /** Called after a successful delete — preferred over onSuccess for delete. */
+  onDeleted?: (id: string) => void;
 }
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export function RecipientForm({ record, defaultName, defaultAlias, defaultCoaCode, defaultCoaName, onSuccess }: RecipientFormProps) {
+export function RecipientForm({ record, defaultName, defaultAlias, defaultCoaCode, defaultCoaName, onSuccess, onSaved, onDeleted }: RecipientFormProps) {
   const isEdit = !!record;
 
   // Basic fields
@@ -129,7 +133,11 @@ export function RecipientForm({ record, defaultName, defaultAlias, defaultCoaCod
           });
         }
       }
-      onSuccess();
+      if (isEdit) {
+        onSaved ? onSaved(record.id) : onSuccess();
+      } else {
+        onSuccess();
+      }
     } catch {
       setError("Something went wrong.");
     } finally {
@@ -153,7 +161,7 @@ export function RecipientForm({ record, defaultName, defaultAlias, defaultCoaCod
         setConfirmDelete(false);
         return;
       }
-      onSuccess();
+      onDeleted ? onDeleted(record.id) : onSuccess();
     } catch {
       setError("Something went wrong.");
     } finally {
