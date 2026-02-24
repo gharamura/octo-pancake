@@ -8,7 +8,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -296,7 +296,7 @@ export function AccountReport() {
                 <>
                   {renderSectionHeader("Assets")}
                   {data!.assets.map((acc) => (
-                    <>{renderAccountRows(acc)}</>
+                    <Fragment key={acc.id}>{renderAccountRows(acc)}</Fragment>
                   ))}
                   {renderSectionTotals("Assets", data!.assets)}
                 </>
@@ -307,7 +307,7 @@ export function AccountReport() {
                 <>
                   {renderSectionHeader("Liabilities")}
                   {data!.liabilities.map((acc) => (
-                    <>{renderAccountRows(acc)}</>
+                    <Fragment key={acc.id}>{renderAccountRows(acc)}</Fragment>
                   ))}
                   {renderSectionTotals("Liabilities", data!.liabilities)}
                 </>

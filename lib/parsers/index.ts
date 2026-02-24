@@ -1,3 +1,4 @@
+import { btgBlackLegacyParser } from "./btg-black-legacy";
 import { btgCheckingParser } from "./btg-checking";
 import { btgCreditParser } from "./btg-credit";
 import { contabilizeiCheckingParser } from "./contabilizei-checking";
@@ -6,7 +7,7 @@ import type { FileParser } from "./types";
 
 export type { FileParser, ParsedRow } from "./types";
 
-export const PARSERS: FileParser[] = [btgCheckingParser, btgCreditParser, contabilizeiCheckingParser, itauCheckingParser];
+export const PARSERS: FileParser[] = [btgCheckingParser, btgCreditParser, contabilizeiCheckingParser, itauCheckingParser, btgBlackLegacyParser];
 
 export const PARSERS_META = PARSERS.map(({ id, name, accept }) => ({ id, name, accept }));
 

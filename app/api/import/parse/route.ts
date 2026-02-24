@@ -27,7 +27,9 @@ export async function POST(req: Request) {
   const rows   = await parser.parse(buffer);
 
   // ── Enrich with COA suggestions via alias lookup ────────────────────────
-  const descriptions = [...new Set(rows.map((r) => r.description))];
+  // Skip rows that already carry a COA code from the file itself (e.g. legacy imports).
+  const needsEnrichment = rows.filter((r) => r.suggestionSource !== "legacy");
+  const descriptions = [...new Set(needsEnrichment.map((r) => r.description))];
 
   const matches = await db
     .select({
@@ -61,8 +63,30 @@ export async function POST(req: Request) {
     aiSuggestions = await suggestCoaForDescriptions(unmatched, allCoa);
   }
 
+  // ── Fix sign for legacy rows whose COA type is "expense" ────────────────
+  // All amounts in the legacy file are stored as positive; expenses must be negated.
+  const legacyRows = rows.filter((r) => r.suggestionSource === "legacy" && r.suggestedCoaCode);
+  const legacyCodes = [...new Set(legacyRows.map((r) => r.suggestedCoaCode!))];
+  let expenseCodes = new Set<string>();
+  if (legacyCodes.length > 0) {
+    const coaTypes = await db
+      .select({ code: coaAccounts.code, type: coaAccounts.type })
+      .from(coaAccounts)
+      .where(inArray(coaAccounts.code, legacyCodes));
+    expenseCodes = new Set(coaTypes.filter((c) => c.type === "expense").map((c) => c.code));
+  }
+
   // ── Merge results ───────────────────────────────────────────────────────
   const enriched = rows.map((r) => {
+    // Legacy rows already have their COA set from the file — preserve them as-is,
+    // but negate the amount when the COA is an expense account.
+    if (r.suggestionSource === "legacy") {
+      const amount = r.suggestedCoaCode && expenseCodes.has(r.suggestedCoaCode)
+        ? -Math.abs(r.amount)
+        : r.amount;
+      return { ...r, amount };
+    }
+
     const aliasMatch = coaByAlias.get(r.description);
     if (aliasMatch) {
       return { ...r, suggestedCoaCode: aliasMatch.coaCode, suggestedCoaName: aliasMatch.coaName, suggestionSource: "alias" as const };

@@ -56,14 +56,11 @@ function fmt(val: number): string {
   return val.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
 
-function valColor(val: number, positiveIsGood: boolean): string {
+function valColor(val: number): string {
   if (val === 0) return "text-muted-foreground";
-  if (val > 0) return positiveIsGood
+  return val > 0
     ? "text-green-700 dark:text-green-400"
-    : "text-red-600   dark:text-red-400";
-  return positiveIsGood
-    ? "text-red-600   dark:text-red-400"
-    : "text-green-700 dark:text-green-400";
+    : "text-red-600 dark:text-red-400";
 }
 
 function mv(row: CoaReportRow, m: number): number {
@@ -96,21 +93,13 @@ function SortIcon({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey; s
 const TD_STICKY =
   "sticky left-0 z-10 whitespace-nowrap px-3 py-2";
 const TH_STICKY =
-  "sticky left-0 z-20 whitespace-nowrap px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide";
+  "sticky left-0 top-0 z-30 whitespace-nowrap px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide";
 const TD_NUM =
   "px-3 py-2 text-right tabular-nums text-sm";
 const TD_NUM_TOTAL =
   "px-3 py-2 text-right tabular-nums text-sm font-semibold border-l";
 
-function AccountRow({
-  row,
-  positiveIsGood,
-  bg,
-}: {
-  row:            CoaReportRow;
-  positiveIsGood: boolean;
-  bg:             string;
-}) {
+function AccountRow({ row, bg }: { row: CoaReportRow; bg: string }) {
   return (
     <tr className={`border-b transition-colors hover:brightness-95 ${bg}`}>
       <td className={`${TD_STICKY} ${bg}`}>
@@ -120,27 +109,19 @@ function AccountRow({
       {MONTHS.map((_, i) => {
         const val = mv(row, i + 1);
         return (
-          <td key={i} className={`${TD_NUM} ${valColor(val, positiveIsGood)}`}>
+          <td key={i} className={`${TD_NUM} ${valColor(val)}`}>
             {fmt(val)}
           </td>
         );
       })}
-      <td className={`${TD_NUM_TOTAL} ${valColor(row.total, positiveIsGood)}`}>
+      <td className={`${TD_NUM_TOTAL} ${valColor(row.total)}`}>
         {fmt(row.total)}
       </td>
     </tr>
   );
 }
 
-function SectionRows({
-  label,
-  rows,
-  positiveIsGood,
-}: {
-  label:          string;
-  rows:           CoaReportRow[];
-  positiveIsGood: boolean;
-}) {
+function SectionRows({ label, rows }: { label: string; rows: CoaReportRow[] }) {
   if (rows.length === 0) return null;
 
   const bg    = "bg-background";
@@ -160,12 +141,7 @@ function SectionRows({
 
       {/* Account rows */}
       {rows.map((row) => (
-        <AccountRow
-          key={row.code}
-          row={row}
-          positiveIsGood={positiveIsGood}
-          bg={bg}
-        />
+        <AccountRow key={row.code} row={row} bg={bg} />
       ))}
 
       {/* Section subtotal */}
@@ -176,12 +152,12 @@ function SectionRows({
         {MONTHS.map((_, i) => {
           const val = sectionMonthSum(rows, i + 1);
           return (
-            <td key={i} className={`${TD_NUM} font-semibold ${valColor(val, positiveIsGood)}`}>
+            <td key={i} className={`${TD_NUM} font-semibold ${valColor(val)}`}>
               {fmt(val)}
             </td>
           );
         })}
-        <td className={`${TD_NUM_TOTAL} font-bold ${valColor(sectionTotal(rows), positiveIsGood)}`}>
+        <td className={`${TD_NUM_TOTAL} font-bold ${valColor(sectionTotal(rows))}`}>
           {fmt(sectionTotal(rows))}
         </td>
       </tr>
@@ -206,14 +182,13 @@ function ResultRow({
         const m   = i + 1;
         const val = sectionMonthSum(incomeRows, m) + sectionMonthSum(expenseRows, m);
         return (
-          <td key={i} className={`${TD_NUM} font-bold ${valColor(val, true)}`}>
+          <td key={i} className={`${TD_NUM} font-bold ${valColor(val)}`}>
             {fmt(val)}
           </td>
         );
       })}
       <td className={`${TD_NUM_TOTAL} font-bold ${valColor(
-        sectionTotal(incomeRows) + sectionTotal(expenseRows),
-        true
+        sectionTotal(incomeRows) + sectionTotal(expenseRows)
       )}`}>
         {fmt(sectionTotal(incomeRows) + sectionTotal(expenseRows))}
       </td>
@@ -306,7 +281,7 @@ export function CoaReport() {
           No transactions found for {year}.
         </p>
       ) : (
-        <div className="rounded-md border overflow-x-auto">
+        <div className="rounded-md border overflow-auto max-h-[calc(100vh-14rem)]">
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr className="border-b bg-muted/40">
@@ -321,7 +296,7 @@ export function CoaReport() {
                   <th
                     key={m}
                     onClick={() => handleSort(i + 1)}
-                    className={`px-3 py-2.5 text-right text-xs font-medium uppercase tracking-wide min-w-[90px] ${TH_SORT}`}
+                    className={`sticky top-0 z-20 bg-muted/40 px-3 py-2.5 text-right text-xs font-medium uppercase tracking-wide min-w-[90px] ${TH_SORT}`}
                   >
                     {m}
                     <SortIcon col={i + 1} sortKey={sortKey} sortDir={sortDir} />
@@ -329,7 +304,7 @@ export function CoaReport() {
                 ))}
                 <th
                   onClick={() => handleSort("total")}
-                  className={`px-3 py-2.5 text-right text-xs font-medium uppercase tracking-wide min-w-[110px] border-l ${TH_SORT}`}
+                  className={`sticky top-0 z-20 bg-muted/40 px-3 py-2.5 text-right text-xs font-medium uppercase tracking-wide min-w-[110px] border-l ${TH_SORT}`}
                 >
                   Total
                   <SortIcon col="total" sortKey={sortKey} sortDir={sortDir} />
@@ -337,37 +312,17 @@ export function CoaReport() {
               </tr>
             </thead>
             <tbody>
-              <SectionRows
-                label="Income"
-                rows={byType.income ?? []}
-                positiveIsGood={true}
-              />
-              <SectionRows
-                label="Expenses"
-                rows={byType.expense ?? []}
-                positiveIsGood={false}
-              />
+              <SectionRows label="Income"      rows={byType.income    ?? []} />
+              <SectionRows label="Expenses"    rows={byType.expense   ?? []} />
               {(byType.income?.length || byType.expense?.length) ? (
                 <ResultRow
                   incomeRows={byType.income ?? []}
                   expenseRows={byType.expense ?? []}
                 />
               ) : null}
-              <SectionRows
-                label="Liabilities"
-                rows={byType.liability ?? []}
-                positiveIsGood={false}
-              />
-              <SectionRows
-                label="Assets"
-                rows={byType.asset ?? []}
-                positiveIsGood={true}
-              />
-              <SectionRows
-                label="Equity"
-                rows={byType.equity ?? []}
-                positiveIsGood={true}
-              />
+              <SectionRows label="Liabilities" rows={byType.liability ?? []} />
+              <SectionRows label="Assets"      rows={byType.asset     ?? []} />
+              <SectionRows label="Equity"      rows={byType.equity    ?? []} />
             </tbody>
           </table>
         </div>

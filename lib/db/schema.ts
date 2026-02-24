@@ -158,8 +158,9 @@ export type NewTransaction = typeof transactions.$inferInsert;
 
 // ---------------------------------------------------------------------------
 // Account Balances
-// Manual balance snapshots per account.
+// Manual balance snapshots — shared by financial accounts and individual assets.
 // accountId is a soft reference (index only, no FK constraint).
+// assetId is null for account-level snapshots; set for asset-level snapshots.
 // ---------------------------------------------------------------------------
 
 export const accountBalances = pgTable(
@@ -169,6 +170,7 @@ export const accountBalances = pgTable(
       .primaryKey()
       .$defaultFn(() => crypto.randomUUID()),
     accountId: text("account_id").notNull(),
+    assetId:   text("asset_id"),   // null → account balance | set → asset balance
     date:      date("date", { mode: "date" }).notNull(),
     balance:   numeric("balance", { precision: 15, scale: 2 }).notNull(),
     notes:     text("notes"),
@@ -181,11 +183,54 @@ export const accountBalances = pgTable(
   (t) => [
     index("account_balances_account_id_idx").on(t.accountId),
     index("account_balances_date_idx").on(t.date),
+    index("account_balances_asset_id_idx").on(t.assetId),
   ]
 );
 
 export type AccountBalance    = typeof accountBalances.$inferSelect;
 export type NewAccountBalance = typeof accountBalances.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Assets
+// Individual investment positions linked to a financial account.
+// accountId is a soft reference (index only, no FK constraint).
+// ---------------------------------------------------------------------------
+
+export type AssetType =
+  | "investment_fund" | "treasury_bonds" | "cdb"  | "corporate_bonds"
+  | "etf"             | "adr"            | "reit" | "stocks"
+  | "coe"             | "crypto"         | "lca"  | "pension"
+  | "cri"             | "cra"            | "cash";
+
+export const assets = pgTable(
+  "assets",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    accountId:      text("account_id").notNull(),
+    name:           text("name").notNull(),
+    type:           text("type").$type<AssetType>().notNull(),
+    custodian:      text("custodian"),
+    currency:       text("currency").notNull().default("BRL"),
+    country:        text("country").notNull().default("BR"),
+    expirationDate: date("expiration_date", { mode: "date" }),
+    rule:           text("rule"),
+    isActive:       boolean("is_active").notNull().default(true),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .notNull()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [
+    index("assets_account_id_idx").on(t.accountId),
+    index("assets_type_idx").on(t.type),
+  ]
+);
+
+export type Asset    = typeof assets.$inferSelect;
+export type NewAsset = typeof assets.$inferInsert;
 
 // ---------------------------------------------------------------------------
 // Recipients

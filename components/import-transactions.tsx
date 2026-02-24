@@ -23,6 +23,7 @@ const AVAILABLE_PARSERS = [
   { id: "btg-credit",            name: "BTG Pactual – Fatura Cartão",    accept: ".xlsx"      },
   { id: "contabilizei-checking", name: "Contabilizei – Extrato",         accept: ".csv"       },
   { id: "itau-checking",         name: "Itaú – Extrato Conta Corrente",  accept: ".pdf"       },
+  { id: "btg-black-legacy",      name: "BTG Black – Legado",             accept: ".xlsx"      },
 ];
 
 // ---------------------------------------------------------------------------
@@ -139,6 +140,8 @@ export function ImportTransactions() {
             description:      r.description,
             amount:           r.amount,
             suggestedCoaCode: r.suggestedCoaCode,
+            accountingDate:   r.accountingDate,
+            notes:            r.notes,
           })),
         }),
       });
@@ -346,6 +349,11 @@ export function ImportTransactions() {
                           {row.suggestionSource === "ai" && (
                             <span className="rounded bg-blue-100 px-1 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
                               AI
+                            </span>
+                          )}
+                          {row.suggestionSource === "legacy" && (
+                            <span className="rounded bg-purple-100 px-1 py-0.5 text-[10px] font-medium text-purple-700 dark:bg-purple-900/40 dark:text-purple-300">
+                              Legacy
                             </span>
                           )}
                         </span>

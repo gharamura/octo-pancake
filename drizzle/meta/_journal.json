@@ -71,6 +71,13 @@
       "when": 1771794112444,
       "tag": "0009_slimy_shockwave",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1771888612709,
+      "tag": "0010_perfect_ultimatum",
+      "breakpoints": true
     }
   ]
 }

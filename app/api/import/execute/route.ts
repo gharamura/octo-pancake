@@ -8,6 +8,8 @@ interface ImportRow {
   description:      string;
   amount:           number;
   suggestedCoaCode: string | null;
+  accountingDate?:  string | null;
+  notes?:           string | null;
 }
 
 export async function POST(req: Request) {
@@ -28,12 +30,12 @@ export async function POST(req: Request) {
 
   const values = rows.map((r) => ({
     transactionDate: new Date(r.date),
-    accountingDate:  new Date(r.date),
+    accountingDate:  r.accountingDate ? new Date(r.accountingDate) : new Date(r.date),
     accountId,
     coaCode:         r.suggestedCoaCode ?? null,
     amount:          String(r.amount),
     recipient:       r.description.toUpperCase(),
-    notes:           null,
+    notes:           r.notes ?? null,
   }));
 
   await db.insert(transactions).values(values);
