@@ -26,7 +26,7 @@ const accounts: NewCoaAccount[] = [
   { code: "2130", parentCode: "2100", name: "supplies", type: "expense" },
   { code: "2140", parentCode: "2100", name: "cleaning", type: "expense" },
   { code: "2150", parentCode: "2100", name: "home decor & furnishings", type: "expense" },
-  { code: "2160", parentCode: "2100", name: "loan", type: "liability" },
+  { code: "2160", parentCode: "2100", name: "loan", type: "investment" },
 
   // Utilities
   { code: "2200", parentCode: "2000", name: "utilities", type: "expense" },
@@ -87,20 +87,20 @@ const accounts: NewCoaAccount[] = [
   { code: "2860", parentCode: "2800", name: "cosmetics", type: "expense" },
 
   // ---------------------------------------------------------------------------
-  // Transfers (equity)
+  // Transfers
   // ---------------------------------------------------------------------------
-  { code: "3000", parentCode: null, name: "transfers", type: "equity" },
-  { code: "3110", parentCode: "3000", name: "transfers", type: "equity" },
-  { code: "3120", parentCode: "3000", name: "exchange", type: "equity" },
+  { code: "3000", parentCode: null, name: "transfers", type: "transfer" },
+  { code: "3110", parentCode: "3000", name: "transfers", type: "transfer" },
+  { code: "3120", parentCode: "3000", name: "exchange", type: "transfer" },
 
   // ---------------------------------------------------------------------------
-  // Savings (asset / liability mix)
+  // Investments
   // ---------------------------------------------------------------------------
-  { code: "4000", parentCode: null, name: "savings", type: "asset" },
-  { code: "4110", parentCode: "4000", name: "out", type: "liability" },
-  { code: "4210", parentCode: "4000", name: "in", type: "asset" },
-  { code: "4220", parentCode: "4000", name: "pension", type: "asset" },
-  { code: "4230", parentCode: "4000", name: "other savings", type: "asset" },
+  { code: "4000", parentCode: null, name: "savings", type: "investment" },
+  { code: "4110", parentCode: "4000", name: "out", type: "investment" },
+  { code: "4210", parentCode: "4000", name: "in", type: "investment" },
+  { code: "4220", parentCode: "4000", name: "pension", type: "investment" },
+  { code: "4230", parentCode: "4000", name: "other savings", type: "investment" },
 
   // ---------------------------------------------------------------------------
   // Work expenses

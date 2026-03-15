@@ -47,7 +47,7 @@ export const verificationTokens = pgTable("verification_tokens", {
 // Global shared table — no userId. code is the natural PK.
 // ---------------------------------------------------------------------------
 
-export type AccountType = "asset" | "liability" | "equity" | "income" | "expense";
+export type AccountType = "income" | "expense" | "transfer" | "investment";
 
 export const coaAccounts = pgTable(
   "coa_accounts",
@@ -137,6 +137,8 @@ export const transactions = pgTable(
     // Direct link to a known recipient — bypasses alias matching when the
     // raw description string is too generic to serve as a unique alias.
     recipientId:     text("recipient_id"),
+    // Link to an asset — required for COA codes 1060, 4110, 4210.
+    assetId:         text("asset_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -150,6 +152,7 @@ export const transactions = pgTable(
     index("transactions_accounting_date_idx").on(t.accountingDate),
     index("transactions_transfer_id_idx").on(t.transferId),
     index("transactions_recipient_id_idx").on(t.recipientId),
+    index("transactions_asset_id_idx").on(t.assetId),
   ]
 );
 
@@ -196,11 +199,35 @@ export type NewAccountBalance = typeof accountBalances.$inferInsert;
 // accountId is a soft reference (index only, no FK constraint).
 // ---------------------------------------------------------------------------
 
-export type AssetType =
-  | "investment_fund" | "treasury_bonds" | "cdb"  | "corporate_bonds"
-  | "etf"             | "adr"            | "reit" | "stocks"
-  | "coe"             | "crypto"         | "lca"  | "pension"
-  | "cri"             | "cra"            | "cash";
+export type AssetClass =
+  | "cash_equivalents"
+  | "fixed_income"
+  | "fixed_income_private_credit"
+  | "fixed_income_intl_bonds"
+  | "structured_products"
+  | "equities"
+  | "real_estate_agro"
+  | "private_equity"
+  | "crypto"
+  | "commodities"
+  | "hedge_funds"
+  | "pension";
+
+export type AssetGeography = "BR" | "US" | "China" | "Global" | "Offshore USD";
+
+export type AssetRiskFactor =
+  | "interest_rate"
+  | "credit_spread"
+  | "equity"
+  | "commodity"
+  | "crypto"
+  | "structured_optionality"
+  | "illiquid_private_assets"
+  | "dollar"
+  | "gold"
+  | "inflation";
+
+export type AssetLiquidity = "daily" | "d30_90" | "lockup" | "closed_end" | "illiquid";
 
 export const assets = pgTable(
   "assets",
@@ -210,10 +237,12 @@ export const assets = pgTable(
       .$defaultFn(() => crypto.randomUUID()),
     accountId:      text("account_id").notNull(),
     name:           text("name").notNull(),
-    type:           text("type").$type<AssetType>().notNull(),
+    assetClass:     text("asset_class").$type<AssetClass>(),
+    geography:      text("geography").$type<AssetGeography>(),
+    riskFactor:     text("risk_factor").$type<AssetRiskFactor>(),
+    liquidity:      text("liquidity").$type<AssetLiquidity>(),
     custodian:      text("custodian"),
     currency:       text("currency").notNull().default("BRL"),
-    country:        text("country").notNull().default("BR"),
     expirationDate: date("expiration_date", { mode: "date" }),
     rule:           text("rule"),
     isActive:       boolean("is_active").notNull().default(true),
@@ -225,7 +254,7 @@ export const assets = pgTable(
   },
   (t) => [
     index("assets_account_id_idx").on(t.accountId),
-    index("assets_type_idx").on(t.type),
+    index("assets_asset_class_idx").on(t.assetClass),
   ]
 );
 
@@ -293,3 +322,28 @@ export const recipientCoa = pgTable(
 
 export type RecipientCoa    = typeof recipientCoa.$inferSelect;
 export type NewRecipientCoa = typeof recipientCoa.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Exchange Rates
+// Spot exchange rates (from_currency → to_currency) used for asset valuation.
+// Unique per currency pair + date; upsert on conflict.
+// ---------------------------------------------------------------------------
+
+export const exchangeRates = pgTable(
+  "exchange_rates",
+  {
+    id:           text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    fromCurrency: text("from_currency").notNull(),
+    toCurrency:   text("to_currency").notNull().default("BRL"),
+    rate:         numeric("rate", { precision: 20, scale: 6 }).notNull(),
+    date:         date("date", { mode: "date" }).notNull(),
+    createdAt:    timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("exchange_rates_currency_date_idx").on(t.fromCurrency, t.toCurrency, t.date),
+    index("exchange_rates_date_idx").on(t.date),
+  ]
+);
+
+export type ExchangeRate    = typeof exchangeRates.$inferSelect;
+export type NewExchangeRate = typeof exchangeRates.$inferInsert;

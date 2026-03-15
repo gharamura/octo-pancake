@@ -56,6 +56,8 @@ import {
   ChevronDown,
   Link2,
   ListFilter,
+  Package,
+  PackageOpen,
   Pencil,
   Plus,
   Search,
@@ -67,6 +69,7 @@ import {
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const TRANSFER_CODES = new Set(["3110", "3120"]);
+const ASSET_COA_CODES = new Set(["1060", "4110", "4210"]);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -241,6 +244,54 @@ function DateRangeFilter({
 }
 
 // ---------------------------------------------------------------------------
+// Single-month filter button
+// ---------------------------------------------------------------------------
+
+function MonthFilter({
+  label,
+  value,
+  onChange,
+  onClear,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  onClear: () => void;
+}) {
+  const active = !!value;
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs font-normal">
+          <CalendarDays className="h-3 w-3 opacity-50" />
+          {label}
+          {active && <span className="h-1.5 w-1.5 rounded-full bg-primary" />}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-52 p-3 space-y-2.5">
+        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+          {label}
+        </p>
+        <div className="space-y-1">
+          <Label className="text-xs">Month</Label>
+          <Input
+            type="month"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            className="h-7 text-xs"
+          />
+        </div>
+        {active && (
+          <Button variant="ghost" size="sm" className="w-full h-7 text-xs" onClick={onClear}>
+            Clear
+          </Button>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Bulk edit bar
 // ---------------------------------------------------------------------------
 
@@ -372,21 +423,41 @@ const MemoRow = memo(
 // Component
 // ---------------------------------------------------------------------------
 
-export function TransactionTable() {
+interface TransactionTableProps {
+  initialCoa?:       string;
+  initialFrom?:      string;
+  initialTo?:        string;
+  initialAccFrom?:   string;
+  initialAccTo?:     string;
+  initialRecipient?: string;
+}
+
+export function TransactionTable({ initialCoa, initialFrom, initialTo, initialAccFrom, initialAccTo, initialRecipient }: TransactionTableProps = {}) {
   const [transactions, setTransactions] = useState<TransactionRow[]>([]);
   const [loading, setLoading]           = useState(true);
   const [sheet, setSheet]               = useState<SheetState>({ open: false, mode: "create" });
 
   // ── Filter state ─────────────────────────────────────────────────────────
   const [filterAccounts,  setFilterAccounts]  = useState<string[]>([]);
-  const [filterCoa,       setFilterCoa]       = useState<string[]>([]);
-  const [filterRecipient, setFilterRecipient] = useState("");
-  const [txFrom,  setTxFrom]  = useState("");
-  const [txTo,    setTxTo]    = useState("");
-  const [accFrom, setAccFrom] = useState("");
-  const [accTo,   setAccTo]   = useState("");
+  const [filterCoa,       setFilterCoa]       = useState<string[]>(() => initialCoa ? [initialCoa] : []);
+  const [filterRecipient, setFilterRecipient] = useState(initialRecipient ?? "");
+  // If an accounting date range is provided (e.g. from COA report), skip the
+  // default 30-day transaction date filter so the accounting date filter
+  // (client-side) can match across the full dataset.
+  const [txFrom,  setTxFrom]  = useState(() => (initialAccFrom || initialRecipient) ? (initialFrom ?? "") : (initialFrom ?? daysAgo(30)));
+  const [txTo,    setTxTo]    = useState(() => (initialAccTo   || initialRecipient) ? (initialTo   ?? "") : (initialTo   ?? today()));
+  const [accMonth, setAccMonth] = useState(() => initialAccFrom?.slice(0, 7) ?? "");
   const [filterOrphans,        setFilterOrphans]        = useState(false);
+  const [filterOrphanAssets,   setFilterOrphanAssets]   = useState(false);
   const [filterUncategorized,  setFilterUncategorized]  = useState(false);
+
+  // ── Draft filter state (pending until Apply is clicked) ────────────────────
+  const [draftFilterAccounts,  setDraftFilterAccounts]  = useState<string[]>([]);
+  const [draftFilterCoa,       setDraftFilterCoa]       = useState<string[]>(() => initialCoa ? [initialCoa] : []);
+  const [draftFilterRecipient, setDraftFilterRecipient] = useState(initialRecipient ?? "");
+  const [draftTxFrom,  setDraftTxFrom]  = useState(() => (initialAccFrom || initialRecipient) ? (initialFrom ?? "") : (initialFrom ?? daysAgo(30)));
+  const [draftTxTo,    setDraftTxTo]    = useState(() => (initialAccTo   || initialRecipient) ? (initialTo   ?? "") : (initialTo   ?? today()));
+  const [draftAccMonth, setDraftAccMonth] = useState(() => initialAccFrom?.slice(0, 7) ?? "");
 
   // ── Transfer dialog state ─────────────────────────────────────────────────
   const [linkDialog,   setLinkDialog]   = useState<{ open: boolean; transaction: TransactionRow | null }>({ open: false, transaction: null });
@@ -408,14 +479,18 @@ export function TransactionTable() {
   // ── Data fetching ─────────────────────────────────────────────────────────
   const fetchTransactions = useCallback(() => {
     setLoading(true);
-    fetch("/api/transactions")
+    const params = new URLSearchParams();
+    if (txFrom) params.set("from", txFrom);
+    if (txTo)   params.set("to",   txTo);
+    const url = `/api/transactions${params.size ? `?${params}` : ""}`;
+    fetch(url)
       .then((r) => r.json())
       .then((data: TransactionRow[]) => {
         setTransactions(data);
         setLoading(false);
       })
       .catch(() => setLoading(false));
-  }, []);
+  }, [txFrom, txTo]);
 
   useEffect(() => {
     fetchTransactions();
@@ -470,11 +545,8 @@ export function TransactionTable() {
   }, []);
 
   const handleCreated = useCallback(() => {
-    fetch("/api/transactions")
-      .then((r) => r.json())
-      .then((data: TransactionRow[]) => setTransactions(data))
-      .catch(() => {});
-  }, []);
+    fetchTransactions();
+  }, [fetchTransactions]);
 
   const flipSign = useCallback((row: TransactionRow) => {
     const newAmount = String(-parseFloat(row.amount));
@@ -528,17 +600,34 @@ export function TransactionTable() {
       const txDate  = toISO(t.transactionDate);
       if (txFrom && txDate < txFrom) return false;
       if (txTo   && txDate > txTo)   return false;
-      const acDate = toISO(t.accountingDate);
-      if (accFrom && (!acDate || acDate < accFrom)) return false;
-      if (accTo   && (!acDate || acDate > accTo))   return false;
+      if (accMonth) {
+        const acM = toISO(t.accountingDate).slice(0, 7);
+        if (!acM || acM !== accMonth) return false;
+      }
       if (filterOrphans       && !(TRANSFER_CODES.has(t.coaCode ?? "") && !t.transferId)) return false;
+      if (filterOrphanAssets  && !(ASSET_COA_CODES.has(t.coaCode ?? "") && !t.assetId))  return false;
       if (filterUncategorized && !!t.coaCode) return false;
       return true;
     });
-  }, [transactions, filterAccounts, filterCoa, filterRecipient, txFrom, txTo, accFrom, accTo, filterOrphans, filterUncategorized]);
+  }, [transactions, filterAccounts, filterCoa, filterRecipient, txFrom, txTo, accMonth, filterOrphans, filterOrphanAssets, filterUncategorized]);
+
+  const totals = useMemo(() => {
+    let totalIn = 0;
+    let totalOut = 0;
+    for (const t of filtered) {
+      const v = parseFloat(t.amount ?? "0");
+      if (v >= 0) totalIn += v; else totalOut += v;
+    }
+    return { totalIn, totalOut, net: totalIn + totalOut };
+  }, [filtered]);
 
   const orphanCount = useMemo(
     () => transactions.filter((t) => TRANSFER_CODES.has(t.coaCode ?? "") && !t.transferId).length,
+    [transactions]
+  );
+
+  const orphanAssetCount = useMemo(
+    () => transactions.filter((t) => ASSET_COA_CODES.has(t.coaCode ?? "") && !t.assetId).length,
     [transactions]
   );
 
@@ -554,23 +643,48 @@ export function TransactionTable() {
 
   const anyFilter =
     filterAccounts.length > 0 || filterCoa.length > 0 ||
-    !!filterRecipient || !!txFrom || !!txTo || !!accFrom || !!accTo ||
-    filterOrphans || filterUncategorized;
+    !!filterRecipient || !!txFrom || !!txTo || !!accMonth ||
+    filterOrphans || filterOrphanAssets || filterUncategorized;
 
   const clearAll = useCallback(() => {
+    const defFrom = daysAgo(30);
+    const defTo   = today();
+    setDraftFilterAccounts([]);
+    setDraftFilterCoa([]);
+    setDraftFilterRecipient("");
+    setDraftTxFrom(defFrom); setDraftTxTo(defTo);
+    setDraftAccMonth("");
     setFilterAccounts([]);
     setFilterCoa([]);
     setFilterRecipient("");
-    setTxFrom(""); setTxTo("");
-    setAccFrom(""); setAccTo("");
+    setTxFrom(defFrom); setTxTo(defTo);
+    setAccMonth("");
     setFilterOrphans(false);
+    setFilterOrphanAssets(false);
     setFilterUncategorized(false);
   }, []);
 
   const toggleAccount = useCallback((v: string) =>
-    setFilterAccounts((prev) => prev.includes(v) ? prev.filter((x) => x !== v) : [...prev, v]), []);
+    setDraftFilterAccounts((prev) => prev.includes(v) ? prev.filter((x) => x !== v) : [...prev, v]), []);
   const toggleCoa = useCallback((v: string) =>
-    setFilterCoa((prev) => prev.includes(v) ? prev.filter((x) => x !== v) : [...prev, v]), []);
+    setDraftFilterCoa((prev) => prev.includes(v) ? prev.filter((x) => x !== v) : [...prev, v]), []);
+
+  const applyFilters = useCallback(() => {
+    setFilterAccounts(draftFilterAccounts);
+    setFilterCoa(draftFilterCoa);
+    setFilterRecipient(draftFilterRecipient);
+    setTxFrom(draftTxFrom);
+    setTxTo(draftTxTo);
+    setAccMonth(draftAccMonth);
+  }, [draftFilterAccounts, draftFilterCoa, draftFilterRecipient, draftTxFrom, draftTxTo, draftAccMonth]);
+
+  const isDirty =
+    draftTxFrom !== txFrom ||
+    draftTxTo !== txTo ||
+    draftAccMonth !== accMonth ||
+    JSON.stringify(draftFilterAccounts) !== JSON.stringify(filterAccounts) ||
+    JSON.stringify(draftFilterCoa) !== JSON.stringify(filterCoa) ||
+    draftFilterRecipient !== filterRecipient;
 
   // ── Bulk edit handlers ────────────────────────────────────────────────────
   const toggleRow = useCallback((id: string) => {
@@ -744,6 +858,30 @@ export function TransactionTable() {
         },
       },
       {
+        id: "asset",
+        header: "",
+        cell: ({ row }) => {
+          const t = row.original;
+          if (!ASSET_COA_CODES.has(t.coaCode ?? "")) return null;
+          if (t.assetId) {
+            return (
+              <span title={t.assetName ?? "Asset linked"} className="text-green-600">
+                <Package className="h-3.5 w-3.5" />
+              </span>
+            );
+          }
+          return (
+            <button
+              title="Orphan asset — click to edit and link"
+              className="text-amber-500 hover:text-amber-600 transition-colors"
+              onClick={(e) => { e.stopPropagation(); openEdit(t); }}
+            >
+              <PackageOpen className="h-3.5 w-3.5" />
+            </button>
+          );
+        },
+      },
+      {
         id: "actions",
         cell: ({ row }) => (
           <Button
@@ -766,43 +904,41 @@ export function TransactionTable() {
     getCoreRowModel: getCoreRowModel(),
   });
 
-  // ── Loading skeleton ───────────────────────────────────────────────────────
-  if (loading) {
-    return (
-      <div className="space-y-3">
-        <div className="flex justify-end">
-          <Skeleton className="h-8 w-40" />
-        </div>
-        <div className="rounded-md border">
-          <div className="p-4 space-y-2">
-            {Array.from({ length: 8 }).map((_, i) => (
-              <Skeleton key={i} className="h-8 w-full" />
-            ))}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   const rows = table.getRowModel().rows;
 
   return (
     <>
-      {/* ── Toolbar ─────────────────────────────────────────────────────── */}
+      {loading ? (
+        <div className="space-y-3">
+          <div className="flex justify-end">
+            <Skeleton className="h-8 w-40" />
+          </div>
+          <div className="rounded-md border">
+            <div className="p-4 space-y-2">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <Skeleton key={i} className="h-8 w-full" />
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* ── Toolbar ─────────────────────────────────────────────────────── */}
       <div className="flex items-center gap-2 flex-wrap">
         {/* Recipient search */}
         <div className="relative flex-1 min-w-[180px]">
           <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
           <Input
             placeholder="Search recipient…"
-            value={filterRecipient}
-            onChange={(e) => setFilterRecipient(e.target.value)}
+            value={draftFilterRecipient}
+            onChange={(e) => setDraftFilterRecipient(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && applyFilters()}
             className="pl-8 h-8 text-sm"
           />
-          {filterRecipient && (
+          {draftFilterRecipient && (
             <button
               className="absolute right-2 top-2 text-muted-foreground hover:text-foreground"
-              onClick={() => setFilterRecipient("")}
+              onClick={() => setDraftFilterRecipient("")}
             >
               <X className="h-3.5 w-3.5" />
             </button>
@@ -813,39 +949,47 @@ export function TransactionTable() {
         <MultiFilter
           label="Account"
           options={accountOptions}
-          selected={filterAccounts}
+          selected={draftFilterAccounts}
           onToggle={toggleAccount}
-          onClear={() => setFilterAccounts([])}
+          onClear={() => setDraftFilterAccounts([])}
         />
 
         {/* COA multi-select */}
         <MultiFilter
           label="COA"
           options={coaOptions}
-          selected={filterCoa}
+          selected={draftFilterCoa}
           onToggle={toggleCoa}
-          onClear={() => setFilterCoa([])}
+          onClear={() => setDraftFilterCoa([])}
         />
 
         {/* Transaction date range */}
         <DateRangeFilter
           label="Tx Period"
-          from={txFrom}
-          to={txTo}
-          onFrom={setTxFrom}
-          onTo={setTxTo}
-          onClear={() => { setTxFrom(""); setTxTo(""); }}
+          from={draftTxFrom}
+          to={draftTxTo}
+          onFrom={setDraftTxFrom}
+          onTo={setDraftTxTo}
+          onClear={() => { setDraftTxFrom(""); setDraftTxTo(""); }}
         />
 
-        {/* Accounting date range */}
-        <DateRangeFilter
-          label="Acc Period"
-          from={accFrom}
-          to={accTo}
-          onFrom={setAccFrom}
-          onTo={setAccTo}
-          onClear={() => { setAccFrom(""); setAccTo(""); }}
+        {/* Accounting month */}
+        <MonthFilter
+          label="Acc Month"
+          value={draftAccMonth}
+          onChange={setDraftAccMonth}
+          onClear={() => setDraftAccMonth("")}
         />
+
+        {/* Apply filters */}
+        <Button
+          variant={isDirty ? "default" : "outline"}
+          size="sm"
+          className="h-8 text-xs"
+          onClick={applyFilters}
+        >
+          Apply
+        </Button>
 
         {/* Uncategorized toggle */}
         <Button
@@ -890,6 +1034,22 @@ export function TransactionTable() {
           {orphanCount > 0 && (
             <span className="rounded-full bg-amber-100 dark:bg-amber-900/40 px-1.5 text-[10px] font-semibold text-amber-700 dark:text-amber-400 leading-4">
               {orphanCount}
+            </span>
+          )}
+        </Button>
+
+        {/* Orphan assets toggle */}
+        <Button
+          variant={filterOrphanAssets ? "secondary" : "outline"}
+          size="sm"
+          className="h-8 gap-1.5 text-xs font-normal"
+          onClick={() => setFilterOrphanAssets((v) => !v)}
+        >
+          <PackageOpen className="h-3 w-3" />
+          Orphan assets
+          {orphanAssetCount > 0 && (
+            <span className="rounded-full bg-amber-100 dark:bg-amber-900/40 px-1.5 text-[10px] font-semibold text-amber-700 dark:text-amber-400 leading-4">
+              {orphanAssetCount}
             </span>
           )}
         </Button>
@@ -975,6 +1135,32 @@ export function TransactionTable() {
           </TableBody>
         </Table>
       </div>
+
+      {/* ── Totals ───────────────────────────────────────────────────────── */}
+      {filtered.length > 0 && (
+        <div className="flex items-center gap-6 px-3 py-2 text-sm tabular-nums">
+          <span className="text-muted-foreground">
+            In{" "}
+            <span className="font-medium text-green-700 dark:text-green-400">
+              {totals.totalIn.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+            </span>
+          </span>
+          <span className="text-muted-foreground">
+            Out{" "}
+            <span className="font-medium text-red-600 dark:text-red-400">
+              {totals.totalOut.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+            </span>
+          </span>
+          <span className="text-muted-foreground">
+            Net{" "}
+            <span className={`font-medium ${totals.net >= 0 ? "text-green-700 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
+              {totals.net.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+            </span>
+          </span>
+        </div>
+      )}
+        </>
+      )}
 
       {/* ── Sheet ────────────────────────────────────────────────────────── */}
       <Sheet open={sheet.open} onOpenChange={(open) => setSheet((s) => ({ ...s, open }))}>

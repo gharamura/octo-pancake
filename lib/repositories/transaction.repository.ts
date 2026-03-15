@@ -1,4 +1,4 @@
-import { aliasedTable, desc, eq, inArray } from "drizzle-orm";
+import { aliasedTable, and, desc, eq, gte, inArray, lte } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   transactions,
@@ -6,6 +6,7 @@ import {
   coaAccounts,
   recipients,
   recipientAliases,
+  assets,
   type Transaction,
   type NewTransaction,
 } from "@/lib/db/schema";
@@ -36,6 +37,8 @@ export type TransactionRow = {
   aliasRecipientId: string | null;
   /** Name of the recipient resolved via alias matching. */
   aliasRecipientName: string | null;
+  assetId:   string | null;
+  assetName: string | null;
 };
 
 export class TransactionRepository {
@@ -59,10 +62,17 @@ export class TransactionRepository {
       linkedRecipientName: recipients.name,
       aliasRecipientId:    recipientAliases.recipientId,
       aliasRecipientName:  aliasRecipient.name,
+      assetId:             transactions.assetId,
+      assetName:           assets.name,
     };
   }
 
-  async findAll(): Promise<TransactionRow[]> {
+  async findAll(opts?: { from?: Date; to?: Date }): Promise<TransactionRow[]> {
+    const conditions = [
+      ...(opts?.from ? [gte(transactions.transactionDate, opts.from)] : []),
+      ...(opts?.to   ? [lte(transactions.transactionDate, opts.to)]   : []),
+    ];
+
     return db
       .select(this.selectFields)
       .from(transactions)
@@ -71,6 +81,8 @@ export class TransactionRepository {
       .leftJoin(recipients, eq(transactions.recipientId, recipients.id))
       .leftJoin(recipientAliases, eq(transactions.recipient, recipientAliases.alias))
       .leftJoin(aliasRecipient, eq(recipientAliases.recipientId, aliasRecipient.id))
+      .leftJoin(assets, eq(transactions.assetId, assets.id))
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(desc(transactions.transactionDate), desc(transactions.createdAt));
   }
 
@@ -83,6 +95,7 @@ export class TransactionRepository {
       .leftJoin(recipients, eq(transactions.recipientId, recipients.id))
       .leftJoin(recipientAliases, eq(transactions.recipient, recipientAliases.alias))
       .leftJoin(aliasRecipient, eq(recipientAliases.recipientId, aliasRecipient.id))
+      .leftJoin(assets, eq(transactions.assetId, assets.id))
       .where(eq(transactions.id, id));
     return rows[0] ?? null;
   }

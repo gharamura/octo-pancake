@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/select";
 import type { AccountType } from "@/lib/db/schema";
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 // ---------------------------------------------------------------------------
@@ -24,11 +25,10 @@ const YEAR_OPTIONS = Array.from({ length: 6 }, (_, i) => CURRENT_YEAR - i);
 
 // Groups in display order; "result" is synthetic and handled separately
 const SECTIONS: { type: AccountType; label: string; positiveIsGood: boolean }[] = [
-  { type: "income",    label: "Income",      positiveIsGood: true  },
-  { type: "expense",   label: "Expenses",    positiveIsGood: false },
-  { type: "liability", label: "Liabilities", positiveIsGood: false },
-  { type: "asset",     label: "Assets",      positiveIsGood: true  },
-  { type: "equity",    label: "Equity",      positiveIsGood: true  },
+  { type: "income",     label: "Income",      positiveIsGood: true  },
+  { type: "expense",    label: "Expenses",    positiveIsGood: false },
+  { type: "investment", label: "Investments", positiveIsGood: true  },
+  { type: "transfer",   label: "Transfers",   positiveIsGood: true  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -67,6 +67,19 @@ function mv(row: CoaReportRow, m: number): number {
   return (row.months as Record<string, number>)[String(m)] ?? 0;
 }
 
+function monthRange(year: number, month: number): { from: string; to: string } {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const lastDay = new Date(year, month, 0).getDate();
+  return {
+    from: `${year}-${pad(month)}-01`,
+    to:   `${year}-${pad(month)}-${pad(lastDay)}`,
+  };
+}
+
+function buildTxUrl(code: string, from: string, to: string): string {
+  return `/transactions?${new URLSearchParams({ coa: code, accFrom: from, accTo: to })}`;
+}
+
 function sectionMonthSum(rows: CoaReportRow[], m: number): number {
   return rows.reduce((s, r) => s + mv(r, m), 0);
 }
@@ -99,7 +112,17 @@ const TD_NUM =
 const TD_NUM_TOTAL =
   "px-3 py-2 text-right tabular-nums text-sm font-semibold border-l";
 
-function AccountRow({ row, bg }: { row: CoaReportRow; bg: string }) {
+function AccountRow({
+  row,
+  bg,
+  year,
+  onNavigate,
+}: {
+  row: CoaReportRow;
+  bg: string;
+  year: number;
+  onNavigate: (url: string) => void;
+}) {
   return (
     <tr className={`border-b transition-colors hover:brightness-95 ${bg}`}>
       <td className={`${TD_STICKY} ${bg}`}>
@@ -107,21 +130,41 @@ function AccountRow({ row, bg }: { row: CoaReportRow; bg: string }) {
         <span className="text-sm font-medium">{row.name}</span>
       </td>
       {MONTHS.map((_, i) => {
-        const val = mv(row, i + 1);
+        const month = i + 1;
+        const val   = mv(row, month);
+        const { from, to } = monthRange(year, month);
+        const clickable = val !== 0;
         return (
-          <td key={i} className={`${TD_NUM} ${valColor(val)}`}>
+          <td
+            key={i}
+            className={`${TD_NUM} ${valColor(val)} ${clickable ? "cursor-pointer hover:underline" : ""}`}
+            onClick={clickable ? () => onNavigate(buildTxUrl(row.code, from, to)) : undefined}
+          >
             {fmt(val)}
           </td>
         );
       })}
-      <td className={`${TD_NUM_TOTAL} ${valColor(row.total)}`}>
+      <td
+        className={`${TD_NUM_TOTAL} ${valColor(row.total)} ${row.total !== 0 ? "cursor-pointer hover:underline" : ""}`}
+        onClick={row.total !== 0 ? () => onNavigate(buildTxUrl(row.code, `${year}-01-01`, `${year}-12-31`)) : undefined}
+      >
         {fmt(row.total)}
       </td>
     </tr>
   );
 }
 
-function SectionRows({ label, rows }: { label: string; rows: CoaReportRow[] }) {
+function SectionRows({
+  label,
+  rows,
+  year,
+  onNavigate,
+}: {
+  label:      string;
+  rows:       CoaReportRow[];
+  year:       number;
+  onNavigate: (url: string) => void;
+}) {
   if (rows.length === 0) return null;
 
   const bg    = "bg-background";
@@ -141,7 +184,7 @@ function SectionRows({ label, rows }: { label: string; rows: CoaReportRow[] }) {
 
       {/* Account rows */}
       {rows.map((row) => (
-        <AccountRow key={row.code} row={row} bg={bg} />
+        <AccountRow key={row.code} row={row} bg={bg} year={year} onNavigate={onNavigate} />
       ))}
 
       {/* Section subtotal */}
@@ -201,6 +244,7 @@ function ResultRow({
 // ---------------------------------------------------------------------------
 
 export function CoaReport() {
+  const router = useRouter();
   const [year,    setYear]    = useState(CURRENT_YEAR);
   const [data,    setData]    = useState<CoaReportRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -312,17 +356,16 @@ export function CoaReport() {
               </tr>
             </thead>
             <tbody>
-              <SectionRows label="Income"      rows={byType.income    ?? []} />
-              <SectionRows label="Expenses"    rows={byType.expense   ?? []} />
+              <SectionRows label="Income"      rows={byType.income     ?? []} year={year} onNavigate={(url) => router.push(url)} />
+              <SectionRows label="Expenses"    rows={byType.expense    ?? []} year={year} onNavigate={(url) => router.push(url)} />
               {(byType.income?.length || byType.expense?.length) ? (
                 <ResultRow
                   incomeRows={byType.income ?? []}
                   expenseRows={byType.expense ?? []}
                 />
               ) : null}
-              <SectionRows label="Liabilities" rows={byType.liability ?? []} />
-              <SectionRows label="Assets"      rows={byType.asset     ?? []} />
-              <SectionRows label="Equity"      rows={byType.equity    ?? []} />
+              <SectionRows label="Investments" rows={byType.investment ?? []} year={year} onNavigate={(url) => router.push(url)} />
+              <SectionRows label="Transfers"   rows={byType.transfer   ?? []} year={year} onNavigate={(url) => router.push(url)} />
             </tbody>
           </table>
         </div>

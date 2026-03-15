@@ -15,7 +15,9 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -54,9 +56,15 @@ export interface TransactionRow {
   linkedRecipientName: string | null;
   aliasRecipientId: string | null;
   aliasRecipientName: string | null;
+  assetId: string | null;
+  assetName: string | null;
 }
 
 const CURRENCIES = ["BRL", "USD", "EUR", "GBP", "ARS", "CLP", "COP", "MXN", "UYU"];
+
+const ASSET_COA_CODES = new Set(["1060", "4110", "4210"]);
+
+type AssetOption = { id: string; name: string; assetClass: string | null; currency: string | null; accountId?: string; accountName?: string };
 
 interface TransactionFormProps {
   transaction?: TransactionRow;
@@ -89,22 +97,13 @@ export function TransactionForm({ transaction, onSuccess, onCreated, onSaved, on
   const [recipient,  setRecipient]  = useState(transaction?.recipient  ?? "");
   const [notes,      setNotes]      = useState(transaction?.notes      ?? "");
 
+  const [assetId,       setAssetId]       = useState<string | null>(transaction?.assetId ?? null);
+  const [assetList,     setAssetList]     = useState<AssetOption[]>([]);
+  const [showAllAssets, setShowAllAssets] = useState(false);
+
   const [accounts, setAccounts] = useState<FinancialAccount[]>([]);
   const [coaList,  setCoaList]  = useState<CoaAccount[]>([]);
 
-  const selectedAccount = useMemo(
-    () => accounts.find((a) => a.id === accountId) ?? null,
-    [accounts, accountId]
-  );
-
-  const isCredit = selectedAccount?.type === "credit_card";
-
-  // For non-credit accounts the accounting date is always the same as the
-  // transaction date — keep them in sync automatically.
-  useEffect(() => {
-    if (!selectedAccount || isCredit) return;
-    setAccountingDate(transactionDate);
-  }, [transactionDate, selectedAccount, isCredit]);
 
   const [coaOpen, setCoaOpen] = useState(false);
   const selectedCoa = useMemo(
@@ -135,10 +134,30 @@ export function TransactionForm({ transaction, onSuccess, onCreated, onSaved, on
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    const isAssetCoa = coaCode !== "__none__" && ASSET_COA_CODES.has(coaCode);
+    if (!isAssetCoa) {
+      setAssetList([]);
+      setAssetId(null);
+      return;
+    }
+    if (!showAllAssets && !accountId) {
+      setAssetList([]);
+      return;
+    }
+    const params = new URLSearchParams({ includeAll: "true" });
+    if (!showAllAssets && accountId) params.set("accountId", accountId);
+    fetch(`/api/assets?${params}`)
+      .then((r) => r.json())
+      .then((data: AssetOption[]) => setAssetList(data))
+      .catch(() => {});
+  }, [accountId, coaCode, showAllAssets]);
+
   async function handleSubmit() {
     setError(null);
     setSaving(true);
     try {
+      const isAssetCoa = coaCode !== "__none__" && ASSET_COA_CODES.has(coaCode);
       const body = {
         transactionDate,
         accountingDate: accountingDate || null,
@@ -148,6 +167,7 @@ export function TransactionForm({ transaction, onSuccess, onCreated, onSaved, on
         currency,
         recipient: recipient || null,
         notes: notes || null,
+        assetId: isAssetCoa ? (assetId || null) : null,
       };
 
       const res = await fetch(
@@ -172,9 +192,9 @@ export function TransactionForm({ transaction, onSuccess, onCreated, onSaved, on
         setAccountingDate("");
         setCoaCode("__none__");
         setAmount("");
-        setCurrency("BRL");
         setRecipient("");
         setNotes("");
+        setAssetId(null);
         onCreated ? onCreated() : onSuccess();
         setTimeout(() => dateInputRef.current?.focus(), 0);
       }
@@ -216,7 +236,12 @@ export function TransactionForm({ transaction, onSuccess, onCreated, onSaved, on
           <SelectContent>
             {accounts.map((a) => (
               <SelectItem key={a.id} value={a.id}>
-                {a.name}{a.institution ? ` · ${a.institution}` : ""}
+                <span className="flex flex-col">
+                  <span>{a.name}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {[a.type, a.institution, a.accountNumber].filter(Boolean).join(" · ")}
+                  </span>
+                </span>
               </SelectItem>
             ))}
           </SelectContent>
@@ -230,7 +255,11 @@ export function TransactionForm({ transaction, onSuccess, onCreated, onSaved, on
           id="transactionDate"
           type="date"
           value={transactionDate}
-          onChange={(e) => setTransactionDate(e.target.value)}
+          onChange={(e) => {
+            const v = e.target.value;
+            setTransactionDate(v);
+            if (v) setAccountingDate(`${v.slice(0, 7)}-01`);
+          }}
           required
         />
       </div>
@@ -274,19 +303,17 @@ export function TransactionForm({ transaction, onSuccess, onCreated, onSaved, on
       </div>
       <p className="text-xs text-muted-foreground -mt-3">Use a negative value for expenses.</p>
 
-      {isCredit && (
-        <div className="space-y-1.5">
-          <Label htmlFor="accountingDate">Accounting Month</Label>
-          <Input
-            id="accountingDate"
-            type="month"
-            value={accountingDate.slice(0, 7)}
-            onChange={(e) =>
-              setAccountingDate(e.target.value ? `${e.target.value}-01` : "")
-            }
-          />
-        </div>
-      )}
+      <div className="space-y-1.5">
+        <Label htmlFor="accountingDate">Accounting Month</Label>
+        <Input
+          id="accountingDate"
+          type="month"
+          value={accountingDate.slice(0, 7)}
+          onChange={(e) =>
+            setAccountingDate(e.target.value ? `${e.target.value}-01` : "")
+          }
+        />
+      </div>
 
       <div className="space-y-1.5">
         <Label>COA Account</Label>
@@ -344,6 +371,75 @@ export function TransactionForm({ transaction, onSuccess, onCreated, onSaved, on
           </PopoverContent>
         </Popover>
       </div>
+
+      {coaCode !== "__none__" && ASSET_COA_CODES.has(coaCode) && (
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <Label>Asset</Label>
+            <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={showAllAssets}
+                onChange={(e) => setShowAllAssets(e.target.checked)}
+                className="rounded border-muted-foreground/40"
+              />
+              All accounts
+            </label>
+          </div>
+          <Select value={assetId ?? "__none__"} onValueChange={(v) => setAssetId(v === "__none__" ? null : v)}>
+            <SelectTrigger>
+              <SelectValue placeholder="Select asset…" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none__">— None —</SelectItem>
+              {showAllAssets ? (
+                (() => {
+                  const grouped = new Map<string, AssetOption[]>();
+                  for (const a of assetList) {
+                    const key = a.accountName ?? a.accountId ?? "Other";
+                    if (!grouped.has(key)) grouped.set(key, []);
+                    grouped.get(key)!.push(a);
+                  }
+                  return Array.from(grouped.entries()).map(([accountName, items]) => (
+                    <SelectGroup key={accountName}>
+                      <SelectLabel className="text-xs text-muted-foreground font-semibold">
+                        {accountName}
+                      </SelectLabel>
+                      {items.map((a) => (
+                        <SelectItem key={a.id} value={a.id}>
+                          <span className="flex flex-col">
+                            <span>{a.name}</span>
+                            {a.assetClass && (
+                              <span className="text-xs text-muted-foreground">
+                                {a.assetClass.replace(/_/g, " ")}
+                                {a.currency && a.currency !== "BRL" && ` · ${a.currency}`}
+                              </span>
+                            )}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  ));
+                })()
+              ) : (
+                assetList.map((a) => (
+                  <SelectItem key={a.id} value={a.id}>
+                    <span className="flex flex-col">
+                      <span>{a.name}</span>
+                      {a.assetClass && (
+                        <span className="text-xs text-muted-foreground">
+                          {a.assetClass.replace(/_/g, " ")}
+                          {a.currency && a.currency !== "BRL" && ` · ${a.currency}`}
+                        </span>
+                      )}
+                    </span>
+                  </SelectItem>
+                ))
+              )}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
 
       <div className="space-y-1.5">
         <Label htmlFor="notes">Notes</Label>

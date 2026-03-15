@@ -16,11 +16,12 @@ import {
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -31,6 +32,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { BalanceForm, type BalanceRow } from "@/components/balance-form";
+import { type FinancialAccount } from "@/lib/db/schema";
 import { ChevronDown, ListFilter, Pencil, Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -45,59 +47,14 @@ function formatDate(value: string | null | undefined): string {
   return `${day}/${month}/${year}`;
 }
 
-// ---------------------------------------------------------------------------
-// Filter header (same pattern as account-table)
-// ---------------------------------------------------------------------------
+function daysAgo(n: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return d.toISOString().split("T")[0];
+}
 
-function FilterHeader({
-  label,
-  options,
-  selected,
-  onToggle,
-  onClear,
-}: {
-  label: string;
-  options: string[];
-  selected: string[];
-  onToggle: (value: string) => void;
-  onClear: () => void;
-}) {
-  const active = selected.length > 0;
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button className="flex items-center gap-1 text-xs font-medium uppercase tracking-wide hover:text-foreground transition-colors">
-          {label}
-          {active
-            ? <ListFilter className="h-3 w-3 text-primary" />
-            : <ChevronDown className="h-3 w-3 opacity-40" />}
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="min-w-[180px]">
-        {options.map((opt) => (
-          <DropdownMenuCheckboxItem
-            key={opt}
-            checked={selected.includes(opt)}
-            onCheckedChange={() => onToggle(opt)}
-            onSelect={(e) => e.preventDefault()}
-          >
-            {opt}
-          </DropdownMenuCheckboxItem>
-        ))}
-        {active && (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              className="justify-center text-xs text-muted-foreground"
-              onSelect={onClear}
-            >
-              Clear filter
-            </DropdownMenuItem>
-          </>
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
+function today(): string {
+  return new Date().toISOString().split("T")[0];
 }
 
 // ---------------------------------------------------------------------------
@@ -115,47 +72,68 @@ interface SheetState {
 // ---------------------------------------------------------------------------
 
 export function BalanceTable() {
-  const [records,  setRecords]  = useState<BalanceRow[]>([]);
-  const [loading,  setLoading]  = useState(true);
-  const [sheet,    setSheet]    = useState<SheetState>({ open: false, mode: "create" });
-  const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
+  // All accounts (for the multi-select)
+  const [allAccounts,      setAllAccounts]      = useState<FinancialAccount[]>([]);
+  const [accountsLoading,  setAccountsLoading]  = useState(true);
 
-  const fetchRecords = useCallback(() => {
-    setLoading(true);
-    fetch("/api/balances")
+  // Filters — initialized after accounts load
+  const [selectedIds,  setSelectedIds]  = useState<string[]>([]);
+  const [from,         setFrom]         = useState(daysAgo(30));
+  const [to,           setTo]           = useState(today());
+
+  // Table data
+  const [records,  setRecords]  = useState<BalanceRow[]>([]);
+  const [loading,  setLoading]  = useState(false);
+  const [sheet,    setSheet]    = useState<SheetState>({ open: false, mode: "create" });
+
+  // Fetch all accounts on mount and default-select checking ones
+  useEffect(() => {
+    fetch("/api/accounts")
       .then((r) => r.json())
-      .then((data: BalanceRow[]) => {
-        setRecords(data);
-        setLoading(false);
+      .then((data: FinancialAccount[]) => {
+        setAllAccounts(data);
+        const checking = data.filter((a) => a.type === "checking").map((a) => a.id);
+        setSelectedIds(checking.length ? checking : data.map((a) => a.id));
+        setAccountsLoading(false);
       })
-      .catch(() => setLoading(false));
+      .catch(() => setAccountsLoading(false));
   }, []);
 
-  useEffect(() => {
-    fetchRecords();
-  }, [fetchRecords]);
+  // Fetch records whenever filters change (skip until accounts are loaded)
+  const fetchRecords = useCallback(() => {
+    if (accountsLoading) return;
+    setLoading(true);
+    const params = new URLSearchParams({ from, to });
+    if (selectedIds.length) params.set("accountIds", selectedIds.join(","));
+    fetch(`/api/balances?${params}`)
+      .then((r) => r.json())
+      .then((data: BalanceRow[]) => { setRecords(data); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, [from, to, selectedIds, accountsLoading]);
 
-  // Account filter options (names of accounts that appear in data)
-  const accountOptions = useMemo(
-    () => Array.from(new Set(records.map((r) => r.accountName).filter(Boolean) as string[])).sort(),
-    [records]
-  );
+  useEffect(() => { fetchRecords(); }, [fetchRecords]);
 
-  const toggleAccount = useCallback((a: string) =>
-    setSelectedAccounts((prev) => prev.includes(a) ? prev.filter((x) => x !== a) : [...prev, a]), []);
-  const clearAccounts = useCallback(() => setSelectedAccounts([]), []);
+  // Account multi-select helpers
+  const toggleAccount = useCallback((id: string) =>
+    setSelectedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]), []);
 
-  const filteredRecords = useMemo(() => {
-    if (!selectedAccounts.length) return records;
-    return records.filter((r) => r.accountName && selectedAccounts.includes(r.accountName));
-  }, [records, selectedAccounts]);
+  const selectAll  = useCallback(() => setSelectedIds(allAccounts.map((a) => a.id)), [allAccounts]);
+  const clearAll   = useCallback(() => setSelectedIds([]), []);
 
+  const accountLabel = useMemo(() => {
+    if (!selectedIds.length) return "No accounts";
+    if (selectedIds.length === allAccounts.length) return "All accounts";
+    if (selectedIds.length === 1) {
+      return allAccounts.find((a) => a.id === selectedIds[0])?.name ?? "1 account";
+    }
+    return `${selectedIds.length} accounts`;
+  }, [selectedIds, allAccounts]);
+
+  const isFiltered = selectedIds.length > 0 && selectedIds.length < allAccounts.length;
+
+  // Sheet
   const openCreate = useCallback(() => setSheet({ open: true, mode: "create" }), []);
-  const openEdit   = useCallback(
-    (r: BalanceRow) => setSheet({ open: true, mode: "edit", record: r }),
-    []
-  );
-
+  const openEdit   = useCallback((r: BalanceRow) => setSheet({ open: true, mode: "edit", record: r }), []);
   const handleFormSuccess = useCallback(() => {
     setSheet((s) => ({ ...s, open: false }));
     fetchRecords();
@@ -172,15 +150,7 @@ export function BalanceTable() {
       },
       {
         accessorKey: "accountName",
-        header: () => (
-          <FilterHeader
-            label="Account"
-            options={accountOptions}
-            selected={selectedAccounts}
-            onToggle={toggleAccount}
-            onClear={clearAccounts}
-          />
-        ),
+        header: "Account",
         cell: ({ row }) => (
           <span className="font-medium">{row.getValue("accountName") ?? "—"}</span>
         ),
@@ -221,21 +191,19 @@ export function BalanceTable() {
         ),
       },
     ],
-    [openEdit, accountOptions, selectedAccounts, toggleAccount, clearAccounts]
+    [openEdit]
   );
 
   const table = useReactTable({
-    data: filteredRecords,
+    data: records,
     columns,
     getCoreRowModel: getCoreRowModel(),
   });
 
-  if (loading) {
+  if (accountsLoading) {
     return (
       <div className="space-y-3">
-        <div className="flex justify-end">
-          <Skeleton className="h-8 w-36" />
-        </div>
+        <Skeleton className="h-10 w-full" />
         <div className="rounded-md border">
           <div className="p-4 space-y-2">
             {Array.from({ length: 6 }).map((_, i) => (
@@ -251,50 +219,123 @@ export function BalanceTable() {
 
   return (
     <>
-      <div className="flex justify-end">
-        <Button variant="success" size="sm" onClick={openCreate}>
-          <Plus className="h-4 w-4 mr-1" />
-          Add Balance
-        </Button>
+      {/* Filter bar */}
+      <div className="flex flex-wrap items-end gap-4">
+        {/* Account multi-select */}
+        <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground">Accounts</Label>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="min-w-[180px] justify-between">
+                <span className="truncate">{accountLabel}</span>
+                {isFiltered
+                  ? <ListFilter className="ml-2 h-3.5 w-3.5 shrink-0 text-primary" />
+                  : <ChevronDown className="ml-2 h-3.5 w-3.5 shrink-0 opacity-50" />}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="min-w-[220px] max-h-72 overflow-y-auto">
+              {allAccounts.map((account) => (
+                <DropdownMenuCheckboxItem
+                  key={account.id}
+                  checked={selectedIds.includes(account.id)}
+                  onCheckedChange={() => toggleAccount(account.id)}
+                  onSelect={(e) => e.preventDefault()}
+                >
+                  <span className="flex flex-col">
+                    <span>{account.name}</span>
+                    {account.type && (
+                      <span className="text-[11px] text-muted-foreground capitalize">{account.type.replace(/_/g, " ")}</span>
+                    )}
+                  </span>
+                </DropdownMenuCheckboxItem>
+              ))}
+              <DropdownMenuSeparator />
+              <div className="flex gap-1 px-2 py-1">
+                <Button variant="ghost" size="sm" className="flex-1 h-7 text-xs" onClick={selectAll}>All</Button>
+                <Button variant="ghost" size="sm" className="flex-1 h-7 text-xs" onClick={clearAll}>None</Button>
+              </div>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+
+        {/* Date range */}
+        <div className="space-y-1.5">
+          <Label htmlFor="bal-from" className="text-xs text-muted-foreground">From</Label>
+          <Input
+            id="bal-from"
+            type="date"
+            value={from}
+            onChange={(e) => setFrom(e.target.value)}
+            className="w-36 h-9"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="bal-to" className="text-xs text-muted-foreground">To</Label>
+          <Input
+            id="bal-to"
+            type="date"
+            value={to}
+            onChange={(e) => setTo(e.target.value)}
+            className="w-36 h-9"
+          />
+        </div>
+
+        <div className="ml-auto">
+          <Button variant="success" size="sm" onClick={openCreate}>
+            <Plus className="h-4 w-4 mr-1" />
+            Add Balance
+          </Button>
+        </div>
       </div>
 
-      <div className="rounded-md border">
-        <Table>
-          <TableHeader>
-            {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow key={headerGroup.id}>
-                {headerGroup.headers.map((header) => (
-                  <TableHead key={header.id}>
-                    {flexRender(header.column.columnDef.header, header.getContext())}
-                  </TableHead>
-                ))}
-              </TableRow>
+      {/* Table */}
+      {loading ? (
+        <div className="rounded-md border">
+          <div className="p-4 space-y-2">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <Skeleton key={i} className="h-8 w-full" />
             ))}
-          </TableHeader>
-          <TableBody>
-            {rows.length ? (
-              rows.map((row) => (
-                <TableRow key={row.id}>
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id}>
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </TableCell>
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-md border">
+          <Table>
+            <TableHeader>
+              {table.getHeaderGroups().map((headerGroup) => (
+                <TableRow key={headerGroup.id}>
+                  {headerGroup.headers.map((header) => (
+                    <TableHead key={header.id}>
+                      {flexRender(header.column.columnDef.header, header.getContext())}
+                    </TableHead>
                   ))}
                 </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell
-                  colSpan={columns.length}
-                  className="h-24 text-center text-muted-foreground"
-                >
-                  No balance records yet. Add one to get started.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </div>
+              ))}
+            </TableHeader>
+            <TableBody>
+              {rows.length ? (
+                rows.map((row) => (
+                  <TableRow key={row.id}>
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell key={cell.id}>
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell
+                    colSpan={columns.length}
+                    className="h-24 text-center text-muted-foreground"
+                  >
+                    No balance records for the selected filters.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      )}
 
       <Sheet open={sheet.open} onOpenChange={(open) => setSheet((s) => ({ ...s, open }))}>
         <SheetContent>

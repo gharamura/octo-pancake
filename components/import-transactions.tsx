@@ -2,17 +2,26 @@
 
 import { Button } from "@/components/ui/button";
 import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
 import type { ParsedRow } from "@/lib/parsers/types";
-import { CheckCircle2, Upload } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Check, CheckCircle2, ChevronsUpDown, Upload } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 // ---------------------------------------------------------------------------
 // Parser registry (metadata only — no server imports)
@@ -23,6 +32,7 @@ const AVAILABLE_PARSERS = [
   { id: "btg-credit",            name: "BTG Pactual – Fatura Cartão",    accept: ".xlsx"      },
   { id: "contabilizei-checking", name: "Contabilizei – Extrato",         accept: ".csv"       },
   { id: "itau-checking",         name: "Itaú – Extrato Conta Corrente",  accept: ".pdf"       },
+  { id: "itau-credit",            name: "Itaú – Fatura Cartão de Crédito", accept: ".pdf"       },
   { id: "btg-black-legacy",      name: "BTG Black – Legado",             accept: ".xlsx"      },
 ];
 
@@ -57,6 +67,16 @@ interface Account {
   accountNumber: string | null;
 }
 
+interface CoaOption {
+  code:       string;
+  name:       string;
+  type:       string;
+  parentCode: string | null;
+}
+
+type SortField = "date" | "description" | "amount" | "coa";
+type SortDir   = "asc" | "desc";
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -80,6 +100,18 @@ export function ImportTransactions() {
   const [importing,    setImporting]    = useState(false);
   const [importError,  setImportError]  = useState<string | null>(null);
 
+  // Sort
+  const [sortField, setSortField] = useState<SortField>("date");
+  const [sortDir,   setSortDir]   = useState<SortDir>("asc");
+
+  // COA list for editing
+  const [coaList, setCoaList] = useState<CoaOption[]>([]);
+  // Per-row COA overrides: tempId → { code, name }
+  const [coaOverrides, setCoaOverrides] = useState<Map<string, { code: string; name: string } | null>>(new Map());
+
+  // Accounting date for the entire batch (YYYY-MM)
+  const [batchAccountingMonth, setBatchAccountingMonth] = useState("");
+
   // ── Done step state ─────────────────────────────────────────────────────
   const [importedCount, setImportedCount] = useState(0);
 
@@ -90,6 +122,10 @@ export function ImportTransactions() {
         setAccounts(data);
         if (data.length === 1) setAccountId(data[0].id);
       })
+      .catch(() => {});
+    fetch("/api/coa")
+      .then((r) => r.json())
+      .then((data: CoaOption[]) => setCoaList(data))
       .catch(() => {});
   }, []);
 
@@ -135,14 +171,23 @@ export function ImportTransactions() {
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify({
           accountId,
-          rows: toImport.map((r) => ({
-            date:             r.date,
-            description:      r.description,
-            amount:           r.amount,
-            suggestedCoaCode: r.suggestedCoaCode,
-            accountingDate:   r.accountingDate,
-            notes:            r.notes,
-          })),
+          rows: toImport.map((r) => {
+            const override = coaOverrides.get(r.tempId);
+            const coaCode = override !== undefined
+              ? (override?.code ?? null)
+              : r.suggestedCoaCode;
+            const accountingDate = batchAccountingMonth
+              ? `${batchAccountingMonth}-01`
+              : r.accountingDate;
+            return {
+              date:             r.date,
+              description:      r.description,
+              amount:           r.amount,
+              suggestedCoaCode: coaCode,
+              accountingDate,
+              notes:            r.notes,
+            };
+          }),
         }),
       });
       if (!res.ok) {
@@ -170,7 +215,74 @@ export function ImportTransactions() {
     setParseError(null);
     setImportError(null);
     setImportedCount(0);
+    setCoaOverrides(new Map());
+    setBatchAccountingMonth("");
+    setSortField("date");
+    setSortDir("asc");
     if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  // ── Leaf COA list (non-parent accounts only) ──────────────────────────
+  const leafCoaList = useMemo(() => {
+    const parentCodes = new Set(coaList.map((c) => c.parentCode).filter(Boolean));
+    return coaList.filter((c) => !parentCodes.has(c.code));
+  }, [coaList]);
+
+  // ── Effective COA for a row (override > suggested) ───────────────────
+  const getRowCoa = useCallback(
+    (row: ParsedRow) => {
+      const override = coaOverrides.get(row.tempId);
+      if (override !== undefined) return override; // null means explicitly cleared
+      if (row.suggestedCoaCode) return { code: row.suggestedCoaCode, name: row.suggestedCoaName ?? "" };
+      return null;
+    },
+    [coaOverrides],
+  );
+
+  // ── Sorted rows ──────────────────────────────────────────────────────
+  const sortedRows = useMemo(() => {
+    const arr = [...rows];
+    const dir = sortDir === "asc" ? 1 : -1;
+    arr.sort((a, b) => {
+      switch (sortField) {
+        case "date":
+          return dir * a.date.localeCompare(b.date);
+        case "description":
+          return dir * a.description.localeCompare(b.description);
+        case "amount":
+          return dir * (a.amount - b.amount);
+        case "coa": {
+          const ca = getRowCoa(a)?.code ?? "";
+          const cb = getRowCoa(b)?.code ?? "";
+          return dir * ca.localeCompare(cb);
+        }
+        default:
+          return 0;
+      }
+    });
+    return arr;
+  }, [rows, sortField, sortDir, getRowCoa]);
+
+  // ── Totals (selected rows only) ──────────────────────────────────────
+  const totals = useMemo(() => {
+    let totalIn = 0;
+    let totalOut = 0;
+    for (const r of rows) {
+      if (!selected.has(r.tempId)) continue;
+      if (r.amount >= 0) totalIn += r.amount;
+      else totalOut += r.amount;
+    }
+    return { totalIn, totalOut, net: totalIn + totalOut };
+  }, [rows, selected]);
+
+  // ── Sort handler ─────────────────────────────────────────────────────
+  function toggleSort(field: SortField) {
+    if (sortField === field) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortField(field);
+      setSortDir("asc");
+    }
   }
 
   // ── Selection helpers ──────────────────────────────────────────────────
@@ -273,8 +385,14 @@ export function ImportTransactions() {
 
   // Step 2: Preview
   if (step === "preview") {
+    const SortIcon = ({ field }: { field: SortField }) => {
+      if (sortField !== field) return <ArrowUpDown className="h-3 w-3 opacity-40" />;
+      return sortDir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />;
+    };
+
     return (
       <div className="space-y-4">
+        {/* Toolbar */}
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <Button variant="outline" size="sm" onClick={reset}>
@@ -284,18 +402,31 @@ export function ImportTransactions() {
               {rows.length} rows parsed · {selected.size} selected
             </span>
           </div>
-          <Button
-            variant="success"
-            size="sm"
-            disabled={selected.size === 0 || importing}
-            onClick={handleImport}
-          >
-            {importing ? "Importing…" : `Import ${selected.size} selected`}
-          </Button>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5">
+              <label className="text-xs text-muted-foreground whitespace-nowrap">Acc Month</label>
+              <Input
+                type="month"
+                value={batchAccountingMonth}
+                onChange={(e) => setBatchAccountingMonth(e.target.value)}
+                className="h-8 w-36 text-xs"
+                placeholder="Same as date"
+              />
+            </div>
+            <Button
+              variant="success"
+              size="sm"
+              disabled={selected.size === 0 || importing}
+              onClick={handleImport}
+            >
+              {importing ? "Importing…" : `Import ${selected.size} selected`}
+            </Button>
+          </div>
         </div>
 
         {importError && <p className="text-sm text-destructive">{importError}</p>}
 
+        {/* Table */}
         <div className="rounded-md border overflow-x-auto">
           <table className="w-full border-collapse text-sm">
             <thead>
@@ -309,15 +440,36 @@ export function ImportTransactions() {
                     className="cursor-pointer"
                   />
                 </th>
-                <th className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide whitespace-nowrap">Date</th>
-                <th className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide">Recipient</th>
-                <th className="px-3 py-2.5 text-right text-xs font-medium uppercase tracking-wide whitespace-nowrap">Amount</th>
-                <th className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide">COA</th>
+                <th
+                  className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide whitespace-nowrap cursor-pointer select-none"
+                  onClick={() => toggleSort("date")}
+                >
+                  <span className="inline-flex items-center gap-1">Date <SortIcon field="date" /></span>
+                </th>
+                <th
+                  className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide cursor-pointer select-none"
+                  onClick={() => toggleSort("description")}
+                >
+                  <span className="inline-flex items-center gap-1">Recipient <SortIcon field="description" /></span>
+                </th>
+                <th
+                  className="px-3 py-2.5 text-right text-xs font-medium uppercase tracking-wide whitespace-nowrap cursor-pointer select-none"
+                  onClick={() => toggleSort("amount")}
+                >
+                  <span className="inline-flex items-center gap-1 justify-end">Amount <SortIcon field="amount" /></span>
+                </th>
+                <th
+                  className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide cursor-pointer select-none"
+                  onClick={() => toggleSort("coa")}
+                >
+                  <span className="inline-flex items-center gap-1">COA <SortIcon field="coa" /></span>
+                </th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => {
+              {sortedRows.map((row) => {
                 const isSelected = selected.has(row.tempId);
+                const rowCoa = getRowCoa(row);
                 return (
                   <tr
                     key={row.tempId}
@@ -341,31 +493,47 @@ export function ImportTransactions() {
                     <td className={`px-3 py-2 text-right tabular-nums font-medium whitespace-nowrap ${row.amount >= 0 ? "text-green-700 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
                       {fmtAmount(row.amount)}
                     </td>
-                    <td className="px-3 py-2">
-                      {row.suggestedCoaCode ? (
-                        <span className="flex items-center gap-1.5 text-xs">
-                          <span className="font-mono text-muted-foreground">{row.suggestedCoaCode}</span>
-                          <span className="truncate max-w-[160px]">{row.suggestedCoaName}</span>
-                          {row.suggestionSource === "ai" && (
-                            <span className="rounded bg-blue-100 px-1 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
-                              AI
-                            </span>
-                          )}
-                          {row.suggestionSource === "legacy" && (
-                            <span className="rounded bg-purple-100 px-1 py-0.5 text-[10px] font-medium text-purple-700 dark:bg-purple-900/40 dark:text-purple-300">
-                              Legacy
-                            </span>
-                          )}
-                        </span>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">—</span>
-                      )}
+                    <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                      <CoaCellEditor
+                        rowCoa={rowCoa}
+                        suggestionSource={coaOverrides.has(row.tempId) ? null : row.suggestionSource}
+                        leafCoaList={leafCoaList}
+                        onChange={(val) => {
+                          setCoaOverrides((prev) => {
+                            const next = new Map(prev);
+                            next.set(row.tempId, val);
+                            return next;
+                          });
+                        }}
+                      />
                     </td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
+        </div>
+
+        {/* Totals */}
+        <div className="flex items-center justify-end gap-6 rounded-lg border bg-muted/30 px-4 py-3 text-sm">
+          <span>
+            <span className="text-muted-foreground mr-1.5">IN</span>
+            <span className="font-medium tabular-nums text-green-700 dark:text-green-400">
+              {fmtAmount(totals.totalIn)}
+            </span>
+          </span>
+          <span>
+            <span className="text-muted-foreground mr-1.5">OUT</span>
+            <span className="font-medium tabular-nums text-red-600 dark:text-red-400">
+              {fmtAmount(totals.totalOut)}
+            </span>
+          </span>
+          <span>
+            <span className="text-muted-foreground mr-1.5">NET</span>
+            <span className={`font-medium tabular-nums ${totals.net >= 0 ? "text-green-700 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
+              {fmtAmount(totals.net)}
+            </span>
+          </span>
         </div>
       </div>
     );
@@ -388,5 +556,84 @@ export function ImportTransactions() {
         </Button>
       </div>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// COA Cell Editor (inline popover combobox per row)
+// ---------------------------------------------------------------------------
+
+function CoaCellEditor({
+  rowCoa,
+  suggestionSource,
+  leafCoaList,
+  onChange,
+}: {
+  rowCoa: { code: string; name: string } | null;
+  suggestionSource: "alias" | "ai" | "legacy" | null;
+  leafCoaList: CoaOption[];
+  onChange: (val: { code: string; name: string } | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="flex items-center gap-1.5 text-xs w-full text-left hover:bg-muted/60 rounded px-1.5 py-0.5 -mx-1.5 -my-0.5 transition-colors"
+        >
+          {rowCoa ? (
+            <>
+              <span className="font-mono text-muted-foreground">{rowCoa.code}</span>
+              <span className="truncate max-w-[120px]">{rowCoa.name}</span>
+              {suggestionSource === "ai" && (
+                <span className="rounded bg-blue-100 px-1 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
+                  AI
+                </span>
+              )}
+              {suggestionSource === "legacy" && (
+                <span className="rounded bg-purple-100 px-1 py-0.5 text-[10px] font-medium text-purple-700 dark:bg-purple-900/40 dark:text-purple-300">
+                  Legacy
+                </span>
+              )}
+            </>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          )}
+          <ChevronsUpDown className="ml-auto h-3 w-3 shrink-0 opacity-40" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-64 p-0" align="start">
+        <Command>
+          <CommandInput placeholder="Search COA…" />
+          <CommandList>
+            <CommandEmpty>No account found.</CommandEmpty>
+            <CommandGroup>
+              <CommandItem
+                value="__none__"
+                onSelect={() => { onChange(null); setOpen(false); }}
+              >
+                <Check className={`mr-2 h-4 w-4 ${!rowCoa ? "opacity-100" : "opacity-0"}`} />
+                — None —
+              </CommandItem>
+              {leafCoaList.map((c) => (
+                <CommandItem
+                  key={c.code}
+                  value={`${c.code} ${c.name}`}
+                  onSelect={() => {
+                    onChange({ code: c.code, name: c.name });
+                    setOpen(false);
+                  }}
+                >
+                  <Check className={`mr-2 h-4 w-4 ${rowCoa?.code === c.code ? "opacity-100" : "opacity-0"}`} />
+                  {c.code} · {c.name}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   );
 }

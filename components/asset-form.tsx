@@ -11,27 +11,60 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { type Asset, type AssetType, type FinancialAccount } from "@/lib/db/schema";
+import {
+  type Asset,
+  type AssetClass,
+  type AssetGeography,
+  type AssetLiquidity,
+  type AssetRiskFactor,
+  type FinancialAccount,
+} from "@/lib/db/schema";
 import { useEffect, useState } from "react";
 
 const CURRENCIES = ["BRL", "USD", "EUR", "GBP", "ARS", "CLP", "COP", "MXN", "UYU", "BTC", "ETH"];
 
-const ASSET_TYPES: { value: AssetType; label: string }[] = [
-  { value: "investment_fund",  label: "Investment Fund" },
-  { value: "treasury_bonds",   label: "Treasury Bonds" },
-  { value: "cdb",              label: "CDB" },
-  { value: "corporate_bonds",  label: "Corporate Bonds" },
-  { value: "etf",              label: "ETF" },
-  { value: "adr",              label: "ADR" },
-  { value: "reit",             label: "REIT" },
-  { value: "stocks",           label: "Stocks" },
-  { value: "coe",              label: "COE" },
-  { value: "crypto",           label: "Crypto" },
-  { value: "lca",              label: "LCA" },
-  { value: "pension",          label: "Pension" },
-  { value: "cri",              label: "CRI" },
-  { value: "cra",              label: "CRA" },
-  { value: "cash",             label: "Cash" },
+const ASSET_CLASSES: { value: AssetClass; label: string }[] = [
+  { value: "cash_equivalents",            label: "Cash Equivalents" },
+  { value: "fixed_income",               label: "Fixed Income" },
+  { value: "fixed_income_private_credit", label: "Fixed Income – Private Credit" },
+  { value: "fixed_income_intl_bonds",    label: "Fixed Income – Intl Bonds" },
+  { value: "structured_products",        label: "Structured Products" },
+  { value: "equities",                   label: "Equities" },
+  { value: "real_estate_agro",           label: "Real Estate & Agro" },
+  { value: "private_equity",             label: "Private Equity" },
+  { value: "crypto",                     label: "Crypto" },
+  { value: "commodities",               label: "Commodities" },
+  { value: "hedge_funds",               label: "Hedge Funds" },
+  { value: "pension",                    label: "Pension" },
+];
+
+const GEOGRAPHIES: { value: AssetGeography; label: string }[] = [
+  { value: "BR",           label: "BR" },
+  { value: "US",           label: "US" },
+  { value: "China",        label: "China" },
+  { value: "Global",       label: "Global" },
+  { value: "Offshore USD", label: "Offshore USD" },
+];
+
+const RISK_FACTORS: { value: AssetRiskFactor; label: string }[] = [
+  { value: "interest_rate",           label: "Interest Rate" },
+  { value: "credit_spread",           label: "Credit Spread" },
+  { value: "equity",                  label: "Equity" },
+  { value: "commodity",               label: "Commodity" },
+  { value: "crypto",                  label: "Crypto" },
+  { value: "structured_optionality",  label: "Structured Optionality" },
+  { value: "illiquid_private_assets", label: "Illiquid Private Assets" },
+  { value: "dollar",                  label: "Dollar" },
+  { value: "gold",                    label: "Gold" },
+  { value: "inflation",               label: "Inflation" },
+];
+
+const LIQUIDITIES: { value: AssetLiquidity; label: string }[] = [
+  { value: "daily",      label: "Daily" },
+  { value: "d30_90",     label: "D+30–90" },
+  { value: "lockup",     label: "Lock-up" },
+  { value: "closed_end", label: "Closed-end" },
+  { value: "illiquid",   label: "Illiquid" },
 ];
 
 function toDateInputValue(val: unknown): string {
@@ -49,15 +82,17 @@ export function AssetForm({ asset, onSuccess }: AssetFormProps) {
   const isEdit = !!asset;
 
   const [accounts, setAccounts] = useState<FinancialAccount[]>([]);
-  const [accountId,      setAccountId]      = useState(asset?.accountId ?? "");
-  const [name,           setName]           = useState(asset?.name ?? "");
-  const [type,           setType]           = useState<AssetType>(asset?.type ?? "investment_fund");
-  const [custodian,      setCustodian]      = useState(asset?.custodian ?? "");
-  const [currency,       setCurrency]       = useState(asset?.currency ?? "BRL");
-  const [country,        setCountry]        = useState(asset?.country ?? "BR");
+  const [accountId,      setAccountId]      = useState(asset?.accountId      ?? "");
+  const [name,           setName]           = useState(asset?.name            ?? "");
+  const [assetClass,     setAssetClass]     = useState<AssetClass | "">(asset?.assetClass ?? "");
+  const [geography,      setGeography]      = useState<AssetGeography | "">(asset?.geography ?? "");
+  const [riskFactor,     setRiskFactor]     = useState<AssetRiskFactor | "">(asset?.riskFactor ?? "");
+  const [liquidity,      setLiquidity]      = useState<AssetLiquidity | "">(asset?.liquidity ?? "");
+  const [custodian,      setCustodian]      = useState(asset?.custodian       ?? "");
+  const [currency,       setCurrency]       = useState(asset?.currency        ?? "BRL");
   const [expirationDate, setExpirationDate] = useState(toDateInputValue(asset?.expirationDate));
-  const [rule,           setRule]           = useState(asset?.rule ?? "");
-  const [isActive,       setIsActive]       = useState(asset?.isActive ?? true);
+  const [rule,           setRule]           = useState(asset?.rule             ?? "");
+  const [isActive,       setIsActive]       = useState(asset?.isActive         ?? true);
   const [error,          setError]          = useState<string | null>(null);
   const [saving,         setSaving]         = useState(false);
   const [confirmDelete,  setConfirmDelete]  = useState(false);
@@ -78,10 +113,12 @@ export function AssetForm({ asset, onSuccess }: AssetFormProps) {
       const body = {
         accountId,
         name,
-        type,
+        assetClass:     assetClass     || null,
+        geography:      geography      || null,
+        riskFactor:     riskFactor     || null,
+        liquidity:      liquidity      || null,
         custodian:      custodian      || null,
         currency,
-        country:        country        || "BR",
         expirationDate: expirationDate || null,
         rule:           rule           || null,
         isActive,
@@ -165,16 +202,58 @@ export function AssetForm({ asset, onSuccess }: AssetFormProps) {
       </div>
 
       <div className="space-y-1.5">
-        <Label>Type</Label>
-        <Select value={type} onValueChange={(v) => setType(v as AssetType)}>
+        <Label>Class</Label>
+        <Select value={assetClass} onValueChange={(v) => setAssetClass(v as AssetClass)}>
           <SelectTrigger>
-            <SelectValue />
+            <SelectValue placeholder="Select class…" />
           </SelectTrigger>
           <SelectContent>
-            {ASSET_TYPES.map((t) => (
-              <SelectItem key={t.value} value={t.value}>
-                {t.label}
-              </SelectItem>
+            {ASSET_CLASSES.map((c) => (
+              <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <Label>Geography</Label>
+          <Select value={geography} onValueChange={(v) => setGeography(v as AssetGeography)}>
+            <SelectTrigger>
+              <SelectValue placeholder="Select…" />
+            </SelectTrigger>
+            <SelectContent>
+              {GEOGRAPHIES.map((g) => (
+                <SelectItem key={g.value} value={g.value}>{g.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label>Liquidity</Label>
+          <Select value={liquidity} onValueChange={(v) => setLiquidity(v as AssetLiquidity)}>
+            <SelectTrigger>
+              <SelectValue placeholder="Select…" />
+            </SelectTrigger>
+            <SelectContent>
+              {LIQUIDITIES.map((l) => (
+                <SelectItem key={l.value} value={l.value}>{l.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label>Risk Factor</Label>
+        <Select value={riskFactor} onValueChange={(v) => setRiskFactor(v as AssetRiskFactor)}>
+          <SelectTrigger>
+            <SelectValue placeholder="Select risk factor…" />
+          </SelectTrigger>
+          <SelectContent>
+            {RISK_FACTORS.map((r) => (
+              <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -190,32 +269,18 @@ export function AssetForm({ asset, onSuccess }: AssetFormProps) {
         />
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1.5">
-          <Label>Currency</Label>
-          <Select value={currency} onValueChange={setCurrency}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {CURRENCIES.map((c) => (
-                <SelectItem key={c} value={c}>{c}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="space-y-1.5">
-          <Label htmlFor="country">Country</Label>
-          <Input
-            id="country"
-            value={country}
-            onChange={(e) => setCountry(e.target.value)}
-            placeholder="BR"
-            maxLength={4}
-            className="uppercase"
-          />
-        </div>
+      <div className="space-y-1.5">
+        <Label>Currency</Label>
+        <Select value={currency} onValueChange={setCurrency}>
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {CURRENCIES.map((c) => (
+              <SelectItem key={c} value={c}>{c}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="space-y-1.5">

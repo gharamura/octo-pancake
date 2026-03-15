@@ -18,6 +18,7 @@ export async function GET() {
     .from(transactions)
     .where(
       sql`${transactions.recipient} is not null
+        and ${transactions.recipientId} is null
         and ${transactions.recipient} not in (
           select ${recipientAliases.alias} from ${recipientAliases}
         )`

@@ -24,7 +24,7 @@ import {
   SidebarMenuSubButton,
   SidebarMenuSubItem,
 } from "@/components/ui/sidebar";
-import { ArrowLeftRight, BarChart2, BookOpen, Building2, ChevronRight, Home, Landmark, LogOut, TrendingUp, Upload, UserX, Wallet } from "lucide-react";
+import { ArrowLeftRight, BarChart2, BookOpen, Building2, ChevronRight, Home, LineChart, LogOut, TrendingUp, Upload, UserX, Wallet, RefreshCw } from "lucide-react";
 import { signOut } from "next-auth/react";
 import Link from "next/link";
 
@@ -57,14 +57,35 @@ export function AppSidebar({ user }: AppSidebarProps) {
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
-          <SidebarMenuItem>
-            <SidebarMenuButton asChild>
-              <Link href="/accounts">
-                <Wallet className="h-4 w-4" />
-                <span>Accounts</span>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
+          <Collapsible asChild defaultOpen className="group/accounts">
+            <SidebarMenuItem>
+              <CollapsibleTrigger asChild>
+                <SidebarMenuButton>
+                  <Wallet className="h-4 w-4" />
+                  <span>Accounts</span>
+                  <ChevronRight className="ml-auto h-4 w-4 transition-transform group-data-[state=open]/accounts:rotate-90" />
+                </SidebarMenuButton>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <SidebarMenuSub>
+                  <SidebarMenuSubItem>
+                    <SidebarMenuSubButton asChild>
+                      <Link href="/accounts">
+                        <span>All Accounts</span>
+                      </Link>
+                    </SidebarMenuSubButton>
+                  </SidebarMenuSubItem>
+                  <SidebarMenuSubItem>
+                    <SidebarMenuSubButton asChild>
+                      <Link href="/balances">
+                        <span>Balances</span>
+                      </Link>
+                    </SidebarMenuSubButton>
+                  </SidebarMenuSubItem>
+                </SidebarMenuSub>
+              </CollapsibleContent>
+            </SidebarMenuItem>
+          </Collapsible>
           <Collapsible asChild defaultOpen className="group/assets">
             <SidebarMenuItem>
               <CollapsibleTrigger asChild>
@@ -90,34 +111,63 @@ export function AppSidebar({ user }: AppSidebarProps) {
                       </Link>
                     </SidebarMenuSubButton>
                   </SidebarMenuSubItem>
+                  <SidebarMenuSubItem>
+                    <SidebarMenuSubButton asChild>
+                      <Link href="/assets/report">
+                        <span>Balance History</span>
+                      </Link>
+                    </SidebarMenuSubButton>
+                  </SidebarMenuSubItem>
+                  <SidebarMenuSubItem>
+                    <SidebarMenuSubButton asChild>
+                      <Link href="/assets/performance">
+                        <LineChart className="h-3.5 w-3.5" />
+                        <span>Performance</span>
+                      </Link>
+                    </SidebarMenuSubButton>
+                  </SidebarMenuSubItem>
+                  <SidebarMenuSubItem>
+                    <SidebarMenuSubButton asChild>
+                      <Link href="/exchange-rates">
+                        <RefreshCw className="h-3.5 w-3.5" />
+                        <span>Exchange Rates</span>
+                      </Link>
+                    </SidebarMenuSubButton>
+                  </SidebarMenuSubItem>
                 </SidebarMenuSub>
               </CollapsibleContent>
             </SidebarMenuItem>
           </Collapsible>
-          <SidebarMenuItem>
-            <SidebarMenuButton asChild>
-              <Link href="/transactions">
-                <ArrowLeftRight className="h-4 w-4" />
-                <span>Transactions</span>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-          <SidebarMenuItem>
-            <SidebarMenuButton asChild>
-              <Link href="/import">
-                <Upload className="h-4 w-4" />
-                <span>Import</span>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-          <SidebarMenuItem>
-            <SidebarMenuButton asChild>
-              <Link href="/balances">
-                <Landmark className="h-4 w-4" />
-                <span>Balances</span>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
+          <Collapsible asChild defaultOpen className="group/transactions">
+            <SidebarMenuItem>
+              <CollapsibleTrigger asChild>
+                <SidebarMenuButton>
+                  <ArrowLeftRight className="h-4 w-4" />
+                  <span>Transactions</span>
+                  <ChevronRight className="ml-auto h-4 w-4 transition-transform group-data-[state=open]/transactions:rotate-90" />
+                </SidebarMenuButton>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <SidebarMenuSub>
+                  <SidebarMenuSubItem>
+                    <SidebarMenuSubButton asChild>
+                      <Link href="/transactions">
+                        <span>All Transactions</span>
+                      </Link>
+                    </SidebarMenuSubButton>
+                  </SidebarMenuSubItem>
+                  <SidebarMenuSubItem>
+                    <SidebarMenuSubButton asChild>
+                      <Link href="/import">
+                        <Upload className="h-3.5 w-3.5" />
+                        <span>Import</span>
+                      </Link>
+                    </SidebarMenuSubButton>
+                  </SidebarMenuSubItem>
+                </SidebarMenuSub>
+              </CollapsibleContent>
+            </SidebarMenuItem>
+          </Collapsible>
           <SidebarMenuItem>
             <SidebarMenuButton asChild>
               <Link href="/recipients">

@@ -2,13 +2,22 @@ import { auth } from "@/auth";
 import { balanceRepository } from "@/lib/repositories/balance.repository";
 import { NextResponse } from "next/server";
 
-export async function GET() {
+export async function GET(req: Request) {
   const session = await auth();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const data = await balanceRepository.findAll();
+  const { searchParams } = new URL(req.url);
+  const from       = searchParams.get("from");
+  const to         = searchParams.get("to");
+  const accountIds = searchParams.get("accountIds");
+
+  const data = await balanceRepository.findAll({
+    from:       from       ? new Date(from)                : undefined,
+    to:         to         ? new Date(to)                  : undefined,
+    accountIds: accountIds ? accountIds.split(",")         : undefined,
+  });
   return NextResponse.json(data);
 }
 

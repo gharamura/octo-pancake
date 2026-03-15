@@ -14,7 +14,7 @@ import { Switch } from "@/components/ui/switch";
 import { type AccountType, type CoaAccount } from "@/lib/db/schema";
 import { useState } from "react";
 
-const TYPES: AccountType[] = ["income", "expense", "asset", "liability", "equity"];
+const TYPES: AccountType[] = ["income", "expense", "transfer", "investment"];
 const NONE = "__none__";
 
 interface CoaFormProps {

@@ -2,6 +2,19 @@
 
 import { Button } from "@/components/ui/button";
 import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
   Sheet,
   SheetContent,
   SheetHeader,
@@ -10,7 +23,8 @@ import {
 import { RecipientForm } from "@/components/recipient-form";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { RecipientDetail } from "@/lib/repositories/recipient.repository";
-import { Check, UserPlus } from "lucide-react";
+import { Check, ChevronsUpDown, ExternalLink, UserPlus } from "lucide-react";
+import Link from "next/link";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -79,8 +93,10 @@ function HandleSheetContent({
   allRecipients: RecipientDetail[];
   onSuccess:     () => void;
 }) {
-  const [showCreate, setShowCreate] = useState(false);
-  const [linking,    setLinking]    = useState<string | null>(null);
+  const [showCreate,    setShowCreate]    = useState(false);
+  const [linking,       setLinking]       = useState<string | null>(null);
+  const [searchOpen,    setSearchOpen]    = useState(false);
+  const [searchLinking, setSearchLinking] = useState(false);
 
   // Score every known recipient and keep the best matches
   const matches = useMemo(() => {
@@ -95,8 +111,8 @@ function HandleSheetContent({
       .slice(0, 8);
   }, [orphan, coaCode, allRecipients]);
 
-  async function handleLink(recipientId: string) {
-    setLinking(recipientId);
+  async function handleLink(recipientId: string, fromSearch = false) {
+    if (fromSearch) setSearchLinking(true); else setLinking(recipientId);
     try {
       await fetch(`/api/recipients/${recipientId}/aliases`, {
         method:  "POST",
@@ -105,7 +121,7 @@ function HandleSheetContent({
       });
       onSuccess();
     } catch {
-      setLinking(null);
+      if (fromSearch) setSearchLinking(false); else setLinking(null);
     }
   }
 
@@ -172,8 +188,62 @@ function HandleSheetContent({
         </div>
       )}
 
+      {/* Search and link any recipient */}
+      <div className={matches.length > 0 ? "border-t pt-4 space-y-2" : "space-y-2"}>
+        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+          Link to existing recipient
+        </p>
+        <div className="flex items-center gap-2">
+          <Popover open={searchOpen} onOpenChange={setSearchOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                role="combobox"
+                aria-expanded={searchOpen}
+                className="flex-1 justify-between font-normal"
+                disabled={searchLinking}
+              >
+                <span className="text-muted-foreground">Search recipients…</span>
+                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+              <Command>
+                <CommandInput placeholder="Search by name…" />
+                <CommandList>
+                  <CommandEmpty>No recipient found.</CommandEmpty>
+                  <CommandGroup>
+                    {allRecipients.map((r) => (
+                      <CommandItem
+                        key={r.id}
+                        value={r.name}
+                        onSelect={() => {
+                          setSearchOpen(false);
+                          handleLink(r.id, true);
+                        }}
+                        disabled={searchLinking}
+                      >
+                        <span className="flex-1 truncate">{r.name}</span>
+                        {r.coas.length > 0 && (
+                          <span className="ml-2 text-[10px] font-mono text-muted-foreground">
+                            {r.coas[0].coaCode}
+                          </span>
+                        )}
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          </Popover>
+          {searchLinking && (
+            <span className="text-xs text-muted-foreground shrink-0">Linking…</span>
+          )}
+        </div>
+      </div>
+
       {/* Create new recipient */}
-      <div className={matches.length > 0 ? "border-t pt-4 space-y-3" : "space-y-3"}>
+      <div className="border-t pt-4 space-y-3">
         {!showCreate ? (
           <Button
             variant="outline"
@@ -298,7 +368,13 @@ export function OrphanRecipients() {
                 className="border-b last:border-0 hover:bg-muted/20 transition-colors"
               >
                 <td className="px-3 py-2 font-mono text-xs max-w-[320px] truncate">
-                  {row.recipient}
+                  <Link
+                    href={`/transactions?recipient=${encodeURIComponent(row.recipient)}`}
+                    className="hover:underline hover:text-foreground text-primary inline-flex items-center gap-1"
+                  >
+                    {row.recipient}
+                    <ExternalLink className="h-3 w-3 shrink-0 opacity-50" />
+                  </Link>
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
                   {row.txCount}

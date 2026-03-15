@@ -31,49 +31,43 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { AssetForm } from "@/components/asset-form";
-import { type Asset, type AssetType } from "@/lib/db/schema";
+import { type Asset, type AssetClass, type AssetLiquidity } from "@/lib/db/schema";
 import type { AssetWithAccount } from "@/lib/repositories/asset.repository";
 import { ChevronDown, ListFilter, Pencil, Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 // ---------------------------------------------------------------------------
-// Type labels & badges
+// Class labels & badges
 // ---------------------------------------------------------------------------
 
-const TYPE_LABELS: Record<AssetType, string> = {
-  investment_fund: "Investment Fund",
-  treasury_bonds:  "Treasury Bonds",
-  cdb:             "CDB",
-  corporate_bonds: "Corporate Bonds",
-  etf:             "ETF",
-  adr:             "ADR",
-  reit:            "REIT",
-  stocks:          "Stocks",
-  coe:             "COE",
-  crypto:          "Crypto",
-  lca:             "LCA",
-  pension:         "Pension",
-  cri:             "CRI",
-  cra:             "CRA",
-  cash:            "Cash",
+const CLASS_LABELS: Record<AssetClass, string> = {
+  cash_equivalents:            "Cash Equivalents",
+  fixed_income:               "Fixed Income",
+  fixed_income_private_credit: "FI – Private Credit",
+  fixed_income_intl_bonds:    "FI – Intl Bonds",
+  structured_products:        "Structured Products",
+  equities:                   "Equities",
+  real_estate_agro:           "Real Estate & Agro",
+  private_equity:             "Private Equity",
+  crypto:                     "Crypto",
+  commodities:               "Commodities",
+  hedge_funds:               "Hedge Funds",
+  pension:                    "Pension",
 };
 
-const TYPE_BADGE: Record<AssetType, string> = {
-  investment_fund: "bg-blue-100   text-blue-800   dark:bg-blue-900/30   dark:text-blue-400",
-  treasury_bonds:  "bg-green-100  text-green-800  dark:bg-green-900/30  dark:text-green-400",
-  cdb:             "bg-teal-100   text-teal-800   dark:bg-teal-900/30   dark:text-teal-400",
-  corporate_bonds: "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-400",
-  etf:             "bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-400",
-  adr:             "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400",
-  reit:            "bg-fuchsia-100 text-fuchsia-800 dark:bg-fuchsia-900/30 dark:text-fuchsia-400",
-  stocks:          "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400",
-  coe:             "bg-amber-100  text-amber-800  dark:bg-amber-900/30  dark:text-amber-400",
-  crypto:          "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400",
-  lca:             "bg-lime-100   text-lime-800   dark:bg-lime-900/30   dark:text-lime-400",
-  pension:         "bg-cyan-100   text-cyan-800   dark:bg-cyan-900/30   dark:text-cyan-400",
-  cri:             "bg-sky-100    text-sky-800    dark:bg-sky-900/30    dark:text-sky-400",
-  cra:             "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400",
-  cash:            "bg-gray-100   text-gray-700   dark:bg-gray-800      dark:text-gray-300",
+const CLASS_BADGE: Record<AssetClass, string> = {
+  cash_equivalents:            "bg-gray-100    text-gray-700   dark:bg-gray-800       dark:text-gray-300",
+  fixed_income:               "bg-green-100   text-green-800  dark:bg-green-900/30   dark:text-green-400",
+  fixed_income_private_credit: "bg-teal-100    text-teal-800   dark:bg-teal-900/30    dark:text-teal-400",
+  fixed_income_intl_bonds:    "bg-cyan-100    text-cyan-800   dark:bg-cyan-900/30    dark:text-cyan-400",
+  structured_products:        "bg-amber-100   text-amber-800  dark:bg-amber-900/30   dark:text-amber-400",
+  equities:                   "bg-blue-100    text-blue-800   dark:bg-blue-900/30    dark:text-blue-400",
+  real_estate_agro:           "bg-lime-100    text-lime-800   dark:bg-lime-900/30    dark:text-lime-400",
+  private_equity:             "bg-violet-100  text-violet-800 dark:bg-violet-900/30  dark:text-violet-400",
+  crypto:                     "bg-yellow-100  text-yellow-800 dark:bg-yellow-900/30  dark:text-yellow-400",
+  commodities:               "bg-orange-100  text-orange-800 dark:bg-orange-900/30  dark:text-orange-400",
+  hedge_funds:               "bg-indigo-100  text-indigo-800 dark:bg-indigo-900/30  dark:text-indigo-400",
+  pension:                    "bg-pink-100    text-pink-800   dark:bg-pink-900/30    dark:text-pink-400",
 };
 
 // ---------------------------------------------------------------------------
@@ -161,8 +155,10 @@ function formatExpiration(val: unknown): string {
 export function AssetTable() {
   const [assetList,     setAssetList]     = useState<AssetWithAccount[]>([]);
   const [loading,       setLoading]       = useState(true);
-  const [sheet,         setSheet]         = useState<SheetState>({ open: false, mode: "create" });
-  const [selectedTypes, setSelectedTypes] = useState<AssetType[]>([]);
+  const [sheet,              setSheet]              = useState<SheetState>({ open: false, mode: "create" });
+  const [selectedClasses,    setSelectedClasses]    = useState<AssetClass[]>([]);
+  const [selectedLiquidities, setSelectedLiquidities] = useState<AssetLiquidity[]>([]);
+  const [selectedAccounts,   setSelectedAccounts]   = useState<string[]>([]);
 
   const fetchAssets = useCallback(() => {
     setLoading(true);
@@ -177,23 +173,54 @@ export function AssetTable() {
 
   useEffect(() => { fetchAssets(); }, [fetchAssets]);
 
-  const toggleType = useCallback((t: AssetType) =>
-    setSelectedTypes((prev) => prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]), []);
-  const clearTypes = useCallback(() => setSelectedTypes([]), []);
+  const toggleClass     = useCallback((c: AssetClass) =>
+    setSelectedClasses((prev) => prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c]), []);
+  const clearClasses    = useCallback(() => setSelectedClasses([]), []);
+
+  const toggleLiquidity = useCallback((l: AssetLiquidity) =>
+    setSelectedLiquidities((prev) => prev.includes(l) ? prev.filter((x) => x !== l) : [...prev, l]), []);
+  const clearLiquidities = useCallback(() => setSelectedLiquidities([]), []);
+
+  const toggleAccount   = useCallback((a: string) =>
+    setSelectedAccounts((prev) => prev.includes(a) ? prev.filter((x) => x !== a) : [...prev, a]), []);
+  const clearAccounts   = useCallback(() => setSelectedAccounts([]), []);
 
   const filteredAssets = useMemo(() => {
-    if (!selectedTypes.length) return assetList;
-    return assetList.filter((a) => selectedTypes.includes(a.type));
-  }, [assetList, selectedTypes]);
+    return assetList.filter((a) => {
+      if (selectedClasses.length    && !(a.assetClass && selectedClasses.includes(a.assetClass)))       return false;
+      if (selectedLiquidities.length && !(a.liquidity  && selectedLiquidities.includes(a.liquidity as AssetLiquidity))) return false;
+      if (selectedAccounts.length   && !(a.accountName && selectedAccounts.includes(a.accountName)))    return false;
+      return true;
+    });
+  }, [assetList, selectedClasses, selectedLiquidities, selectedAccounts]);
 
-  const availableTypes = useMemo(() => new Set(assetList.map((a) => a.type)), [assetList]);
-
-  const typeOptions = useMemo(
-    () => (Object.keys(TYPE_LABELS) as AssetType[])
-      .filter((v) => availableTypes.has(v))
-      .map((v) => ({ value: v, label: TYPE_LABELS[v] })),
-    [availableTypes]
+  const availableClasses = useMemo(() =>
+    new Set(assetList.map((a) => a.assetClass).filter(Boolean) as AssetClass[]),
+    [assetList]
   );
+
+  const classOptions = useMemo(
+    () => (Object.keys(CLASS_LABELS) as AssetClass[])
+      .filter((v) => availableClasses.has(v))
+      .map((v) => ({ value: v, label: CLASS_LABELS[v] })),
+    [availableClasses]
+  );
+
+  const LIQUIDITY_LABELS: Record<AssetLiquidity, string> = {
+    daily: "Daily", d30_90: "D+30–90", lockup: "Lock-up", closed_end: "Closed-end", illiquid: "Illiquid",
+  };
+
+  const liquidityOptions = useMemo(() => {
+    const available = new Set(assetList.map((a) => a.liquidity).filter(Boolean) as AssetLiquidity[]);
+    return (Object.keys(LIQUIDITY_LABELS) as AssetLiquidity[])
+      .filter((v) => available.has(v))
+      .map((v) => ({ value: v, label: LIQUIDITY_LABELS[v] }));
+  }, [assetList]);
+
+  const accountOptions = useMemo(() => {
+    const names = Array.from(new Set(assetList.map((a) => a.accountName).filter(Boolean) as string[]));
+    return names.sort().map((n) => ({ value: n, label: n }));
+  }, [assetList]);
 
   const openCreate = useCallback(() => setSheet({ open: true, mode: "create" }), []);
   const openEdit   = useCallback((asset: Asset) => setSheet({ open: true, mode: "edit", asset }), []);
@@ -213,28 +240,65 @@ export function AssetTable() {
         ),
       },
       {
-        accessorKey: "type",
+        accessorKey: "assetClass",
         header: () => (
           <FilterHeader
-            label="Type"
-            options={typeOptions}
-            selected={selectedTypes}
-            onToggle={toggleType}
-            onClear={clearTypes}
+            label="Class"
+            options={classOptions}
+            selected={selectedClasses}
+            onToggle={toggleClass}
+            onClear={clearClasses}
           />
         ),
         cell: ({ row }) => {
-          const t = row.getValue("type") as AssetType;
+          const c = row.getValue("assetClass") as AssetClass | null;
+          if (!c) return <span className="text-muted-foreground text-xs">—</span>;
           return (
-            <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${TYPE_BADGE[t]}`}>
-              {TYPE_LABELS[t]}
+            <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${CLASS_BADGE[c] ?? "bg-muted text-muted-foreground"}`}>
+              {CLASS_LABELS[c] ?? c}
             </span>
           );
         },
       },
       {
+        accessorKey: "geography",
+        header: "Geography",
+        cell: ({ row }) => (
+          <span className="text-xs font-mono">{row.getValue("geography") ?? "—"}</span>
+        ),
+      },
+      {
+        accessorKey: "liquidity",
+        header: () => (
+          <FilterHeader
+            label="Liquidity"
+            options={liquidityOptions}
+            selected={selectedLiquidities}
+            onToggle={toggleLiquidity}
+            onClear={clearLiquidities}
+          />
+        ),
+        cell: ({ row }) => {
+          const v = row.getValue("liquidity") as string | null;
+          if (!v) return <span className="text-muted-foreground text-xs">—</span>;
+          const labels: Record<string, string> = {
+            daily: "Daily", d30_90: "D+30–90", lockup: "Lock-up",
+            closed_end: "Closed-end", illiquid: "Illiquid",
+          };
+          return <span className="text-xs">{labels[v] ?? v}</span>;
+        },
+      },
+      {
         accessorKey: "accountName",
-        header: "Account",
+        header: () => (
+          <FilterHeader
+            label="Account"
+            options={accountOptions}
+            selected={selectedAccounts}
+            onToggle={toggleAccount}
+            onClear={clearAccounts}
+          />
+        ),
         cell: ({ row }) => (
           <span className="text-muted-foreground">{row.getValue("accountName") ?? "—"}</span>
         ),
@@ -247,12 +311,10 @@ export function AssetTable() {
         ),
       },
       {
-        id: "currency_country",
-        header: "Currency / Country",
+        accessorKey: "currency",
+        header: "Currency",
         cell: ({ row }) => (
-          <span className="font-mono text-xs font-medium">
-            {row.original.currency} / {row.original.country}
-          </span>
+          <span className="font-mono text-xs font-medium">{row.getValue("currency")}</span>
         ),
       },
       {
@@ -299,7 +361,9 @@ export function AssetTable() {
         ),
       },
     ],
-    [openEdit, typeOptions, selectedTypes, toggleType, clearTypes]
+    [openEdit, classOptions, selectedClasses, toggleClass, clearClasses,
+     liquidityOptions, selectedLiquidities, toggleLiquidity, clearLiquidities,
+     accountOptions, selectedAccounts, toggleAccount, clearAccounts]
   );
 
   const table = useReactTable({

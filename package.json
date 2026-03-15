@@ -10,7 +10,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
-    "db:seed-coa": "tsx --env-file=.env.local lib/db/seed-coa.ts"
+    "db:seed-coa": "tsx --env-file=.env.local lib/db/seed-coa.ts",
+    "db:backfill-fx": "tsx --env-file=.env.local scripts/backfill-exchange-rates.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
@@ -29,6 +30,7 @@
     "radix-ui": "^1.4.3",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "recharts": "^3.7.0",
     "tailwind-merge": "^3.5.0",
     "xlsx": "^0.18.5"
   },

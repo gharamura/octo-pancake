@@ -33,7 +33,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 type CoaRow = CoaAccount & { depth: number };
 
-const TYPES: AccountType[] = ["income", "expense", "asset", "liability", "equity"];
+const TYPES: AccountType[] = ["income", "expense", "transfer", "investment"];
 
 const TYPE_STYLES: Record<AccountType, { badge: string; pillActive: string; pillInactive: string }> = {
   income: {
@@ -46,20 +46,15 @@ const TYPE_STYLES: Record<AccountType, { badge: string; pillActive: string; pill
     pillActive: "bg-red-100 border-red-400 text-red-800 dark:bg-red-900/40 dark:border-red-600 dark:text-red-300",
     pillInactive: "border-red-300 text-red-700 opacity-40 hover:opacity-70 dark:border-red-700 dark:text-red-500",
   },
-  asset: {
-    badge: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
-    pillActive: "bg-blue-100 border-blue-400 text-blue-800 dark:bg-blue-900/40 dark:border-blue-600 dark:text-blue-300",
-    pillInactive: "border-blue-300 text-blue-700 opacity-40 hover:opacity-70 dark:border-blue-700 dark:text-blue-500",
-  },
-  liability: {
-    badge: "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400",
-    pillActive: "bg-orange-100 border-orange-400 text-orange-800 dark:bg-orange-900/40 dark:border-orange-600 dark:text-orange-300",
-    pillInactive: "border-orange-300 text-orange-700 opacity-40 hover:opacity-70 dark:border-orange-700 dark:text-orange-500",
-  },
-  equity: {
+  transfer: {
     badge: "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400",
     pillActive: "bg-purple-100 border-purple-400 text-purple-800 dark:bg-purple-900/40 dark:border-purple-600 dark:text-purple-300",
     pillInactive: "border-purple-300 text-purple-700 opacity-40 hover:opacity-70 dark:border-purple-700 dark:text-purple-500",
+  },
+  investment: {
+    badge: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
+    pillActive: "bg-blue-100 border-blue-400 text-blue-800 dark:bg-blue-900/40 dark:border-blue-600 dark:text-blue-300",
+    pillInactive: "border-blue-300 text-blue-700 opacity-40 hover:opacity-70 dark:border-blue-700 dark:text-blue-500",
   },
 };
 

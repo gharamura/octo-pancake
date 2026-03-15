@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, lte } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   accountBalances,
@@ -32,11 +32,21 @@ export class BalanceRepository {
     };
   }
 
-  async findAll(): Promise<AccountBalanceRow[]> {
+  async findAll(filters?: {
+    from?:       Date;
+    to?:         Date;
+    accountIds?: string[];
+  }): Promise<AccountBalanceRow[]> {
+    const conditions = [isNull(accountBalances.assetId)];
+    if (filters?.from)             conditions.push(gte(accountBalances.date, filters.from));
+    if (filters?.to)               conditions.push(lte(accountBalances.date, filters.to));
+    if (filters?.accountIds?.length) conditions.push(inArray(accountBalances.accountId, filters.accountIds));
+
     return db
       .select(this.selectFields)
       .from(accountBalances)
       .leftJoin(financialAccounts, eq(accountBalances.accountId, financialAccounts.id))
+      .where(conditions.length ? and(...conditions) : undefined)
       .orderBy(desc(accountBalances.date), desc(accountBalances.createdAt));
   }
 

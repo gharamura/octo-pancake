@@ -10,20 +10,22 @@ export async function PATCH(
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const { accountId, name, type, custodian, currency, country, expirationDate, rule, isActive } =
+  const { accountId, name, assetClass, geography, riskFactor, liquidity, custodian, currency, expirationDate, rule, isActive } =
     await req.json();
 
-  if (!accountId || !name || !type) {
-    return NextResponse.json({ error: "accountId, name and type are required." }, { status: 400 });
+  if (!accountId || !name) {
+    return NextResponse.json({ error: "accountId and name are required." }, { status: 400 });
   }
 
   const asset = await assetRepository.update(id, {
     accountId,
     name,
-    type,
+    assetClass:     assetClass     ?? null,
+    geography:      geography      ?? null,
+    riskFactor:     riskFactor     ?? null,
+    liquidity:      liquidity      ?? null,
     custodian:      custodian      ?? null,
     currency:       currency       ?? "BRL",
-    country:        country        ?? "BR",
     expirationDate: expirationDate ? new Date(expirationDate) : null,
     rule:           rule           ?? null,
     isActive,

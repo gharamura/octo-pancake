@@ -10,23 +10,27 @@ export async function GET(req: Request) {
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { searchParams } = new URL(req.url);
-  const accountId = searchParams.get("accountId");
+  const accountId  = searchParams.get("accountId");
+  const includeAll = searchParams.get("includeAll") === "true";
 
-  // Filtered view: active + non-expired assets for a specific account
+  // Filtered view: assets for a specific account
   if (accountId) {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const where = includeAll
+      ? eq(assets.accountId, accountId)
+      : (() => {
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          return and(
+            eq(assets.accountId, accountId),
+            eq(assets.isActive, true),
+            or(isNull(assets.expirationDate), gte(assets.expirationDate, today))
+          );
+        })();
 
     const list = await db
       .select()
       .from(assets)
-      .where(
-        and(
-          eq(assets.accountId, accountId),
-          eq(assets.isActive, true),
-          or(isNull(assets.expirationDate), gte(assets.expirationDate, today))
-        )
-      )
+      .where(where)
       .orderBy(assets.name);
 
     return NextResponse.json(list);
@@ -40,20 +44,22 @@ export async function POST(req: Request) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { accountId, name, type, custodian, currency, country, expirationDate, rule, isActive } =
+  const { accountId, name, assetClass, geography, riskFactor, liquidity, custodian, currency, expirationDate, rule, isActive } =
     await req.json();
 
-  if (!accountId || !name || !type) {
-    return NextResponse.json({ error: "accountId, name and type are required." }, { status: 400 });
+  if (!accountId || !name) {
+    return NextResponse.json({ error: "accountId and name are required." }, { status: 400 });
   }
 
   const asset = await assetRepository.create({
     accountId,
     name,
-    type,
+    assetClass:     assetClass     ?? null,
+    geography:      geography      ?? null,
+    riskFactor:     riskFactor     ?? null,
+    liquidity:      liquidity      ?? null,
     custodian:      custodian      ?? null,
     currency:       currency       ?? "BRL",
-    country:        country        ?? "BR",
     expirationDate: expirationDate ? new Date(expirationDate) : null,
     rule:           rule           ?? null,
     isActive:       isActive       ?? true,

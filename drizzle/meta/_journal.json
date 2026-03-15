@@ -78,6 +78,34 @@
       "when": 1771888612709,
       "tag": "0010_perfect_ultimatum",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1740434400000,
+      "tag": "0011_asset_taxonomy",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1740520800000,
+      "tag": "0012_transaction_asset",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1772323200000,
+      "tag": "0013_exchange_rates",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1772409600000,
+      "tag": "0014_coa_type_rename",
+      "breakpoints": true
     }
   ]
 }

@@ -2,13 +2,21 @@ import { auth } from "@/auth";
 import { transactionRepository } from "@/lib/repositories/transaction.repository";
 import { NextResponse } from "next/server";
 
-export async function GET() {
+export async function GET(req: Request) {
   const session = await auth();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const data = await transactionRepository.findAll();
+  const { searchParams } = new URL(req.url);
+  const from = searchParams.get("from");
+  const to   = searchParams.get("to");
+
+  const data = await transactionRepository.findAll({
+    from: from ? new Date(from) : undefined,
+    to:   to   ? new Date(to)   : undefined,
+  });
+
   return NextResponse.json(data);
 }
 
@@ -18,7 +26,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { transactionDate, accountingDate, accountId, coaCode, amount, currency, recipient, notes } =
+  const { transactionDate, accountingDate, accountId, coaCode, amount, currency, recipient, notes, assetId } =
     await req.json();
 
   if (!transactionDate || !accountId || amount === undefined || amount === null || amount === "") {
@@ -37,6 +45,7 @@ export async function POST(req: Request) {
     currency:  currency  || "BRL",
     recipient: recipient || null,
     notes:     notes     || null,
+    assetId:   assetId   || null,
   });
 
   return NextResponse.json(transaction, { status: 201 });

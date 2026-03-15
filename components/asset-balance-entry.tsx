@@ -10,30 +10,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { type Asset, type AssetType, type FinancialAccount } from "@/lib/db/schema";
+import { type Asset, type FinancialAccount } from "@/lib/db/schema";
+import { Switch } from "@/components/ui/switch";
 import { useEffect, useState } from "react";
-
-// ---------------------------------------------------------------------------
-// Type labels
-// ---------------------------------------------------------------------------
-
-const TYPE_LABELS: Record<AssetType, string> = {
-  investment_fund: "Investment Fund",
-  treasury_bonds:  "Treasury Bonds",
-  cdb:             "CDB",
-  corporate_bonds: "Corporate Bonds",
-  etf:             "ETF",
-  adr:             "ADR",
-  reit:            "REIT",
-  stocks:          "Stocks",
-  coe:             "COE",
-  crypto:          "Crypto",
-  lca:             "LCA",
-  pension:         "Pension",
-  cri:             "CRI",
-  cra:             "CRA",
-  cash:            "Cash",
-};
 
 // ---------------------------------------------------------------------------
 // Today in YYYY-MM-DD
@@ -48,15 +27,16 @@ function todayISO(): string {
 // ---------------------------------------------------------------------------
 
 export function AssetBalanceEntry() {
-  const [accounts,  setAccounts]  = useState<FinancialAccount[]>([]);
-  const [accountId, setAccountId] = useState("");
-  const [date,      setDate]      = useState(todayISO());
-  const [assetList, setAssetList] = useState<Asset[]>([]);
-  const [balances,  setBalances]  = useState<Record<string, string>>({});
-  const [loading,   setLoading]   = useState(false);
-  const [saving,    setSaving]    = useState(false);
-  const [savedCount, setSavedCount] = useState<number | null>(null);
-  const [error,     setError]     = useState<string | null>(null);
+  const [accounts,    setAccounts]    = useState<FinancialAccount[]>([]);
+  const [accountId,   setAccountId]   = useState("");
+  const [date,        setDate]        = useState(todayISO());
+  const [includeAll,  setIncludeAll]  = useState(false);
+  const [assetList,   setAssetList]   = useState<Asset[]>([]);
+  const [balances,    setBalances]    = useState<Record<string, string>>({});
+  const [loading,     setLoading]     = useState(false);
+  const [saving,      setSaving]      = useState(false);
+  const [savedCount,  setSavedCount]  = useState<number | null>(null);
+  const [error,       setError]       = useState<string | null>(null);
 
   // Fetch accounts on mount
   useEffect(() => {
@@ -66,7 +46,7 @@ export function AssetBalanceEntry() {
       .catch(() => {});
   }, []);
 
-  // Fetch assets when account changes
+  // Fetch assets when account or includeAll changes
   useEffect(() => {
     if (!accountId) {
       setAssetList([]);
@@ -76,7 +56,9 @@ export function AssetBalanceEntry() {
     setLoading(true);
     setSavedCount(null);
     setError(null);
-    fetch(`/api/assets?accountId=${accountId}`)
+    const params = new URLSearchParams({ accountId });
+    if (includeAll) params.set("includeAll", "true");
+    fetch(`/api/assets?${params}`)
       .then((r) => r.json())
       .then((data: Asset[]) => {
         setAssetList(data);
@@ -84,7 +66,7 @@ export function AssetBalanceEntry() {
         setLoading(false);
       })
       .catch(() => setLoading(false));
-  }, [accountId]);
+  }, [accountId, includeAll]);
 
   function setBalance(assetId: string, value: string) {
     setBalances((prev) => ({ ...prev, [assetId]: value }));
@@ -131,8 +113,8 @@ export function AssetBalanceEntry() {
 
   return (
     <div className="space-y-6 max-w-2xl">
-      {/* Step 1 — Account + Date */}
-      <div className="grid grid-cols-[1fr_auto] gap-4 items-end">
+      {/* Step 1 — Account + Date + toggle */}
+      <div className="grid grid-cols-[1fr_auto_auto] gap-4 items-end">
         <div className="space-y-1.5">
           <Label>Account</Label>
           <Select value={accountId} onValueChange={setAccountId}>
@@ -164,6 +146,17 @@ export function AssetBalanceEntry() {
             className="w-40"
           />
         </div>
+
+        <div className="flex items-center gap-2 pb-0.5">
+          <Switch
+            id="include-all"
+            checked={includeAll}
+            onCheckedChange={setIncludeAll}
+          />
+          <Label htmlFor="include-all" className="text-sm text-muted-foreground whitespace-nowrap">
+            Include inactive / expired
+          </Label>
+        </div>
       </div>
 
       {/* Step 2 — Asset balances table */}
@@ -173,7 +166,7 @@ export function AssetBalanceEntry() {
             <p className="text-sm text-muted-foreground">Loading assets…</p>
           ) : assetList.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              No active assets found for this account.
+              No {includeAll ? "" : "active "}assets found for this account.
             </p>
           ) : (
             <div className="rounded-md border overflow-hidden">
@@ -183,6 +176,7 @@ export function AssetBalanceEntry() {
                     <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Asset</th>
                     <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Type</th>
                     <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Rule</th>
+                    <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Expiration</th>
                     <th className="px-4 py-2.5 text-right font-medium text-muted-foreground w-40">Balance</th>
                   </tr>
                 </thead>
@@ -194,13 +188,21 @@ export function AssetBalanceEntry() {
                     >
                       <td className="px-4 py-2.5 font-medium">{asset.name}</td>
                       <td className="px-4 py-2.5 text-muted-foreground text-xs">
-                        {TYPE_LABELS[asset.type]}
+                        {asset.assetClass?.replace(/_/g, " ") ?? "—"}
                         {asset.currency !== "BRL" && (
                           <span className="ml-1.5 font-mono">{asset.currency}</span>
+                        )}
+                        {(!asset.isActive) && (
+                          <span className="ml-1.5 text-[10px] rounded bg-gray-100 dark:bg-gray-800 px-1 py-0.5 text-gray-500">inactive</span>
                         )}
                       </td>
                       <td className="px-4 py-2.5 text-muted-foreground text-xs">
                         {asset.rule ?? "—"}
+                      </td>
+                      <td className="px-4 py-2.5 text-muted-foreground text-xs tabular-nums">
+                        {asset.expirationDate
+                          ? String(asset.expirationDate).slice(0, 10).split("-").reverse().join("/")
+                          : "—"}
                       </td>
                       <td className="px-4 py-2 text-right">
                         <Input

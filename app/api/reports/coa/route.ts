@@ -18,13 +18,26 @@ export async function GET(req: Request) {
     db.select().from(coaAccounts),
     db.execute(sql`
       SELECT
-        coa_code,
-        EXTRACT(MONTH FROM transaction_date)::int AS month,
-        SUM(amount::numeric)                       AS total
-      FROM transactions
-      WHERE EXTRACT(YEAR FROM transaction_date) = ${year}
-        AND coa_code IS NOT NULL
-      GROUP BY coa_code, EXTRACT(MONTH FROM transaction_date)::int
+        t.coa_code,
+        EXTRACT(MONTH FROM COALESCE(t.accounting_date, t.transaction_date))::int AS month,
+        SUM(
+          CASE
+            WHEN t.currency = 'BRL' OR t.currency IS NULL THEN t.amount::numeric
+            ELSE t.amount::numeric * COALESCE(er.rate, 1)
+          END
+        ) AS total
+      FROM transactions t
+      LEFT JOIN LATERAL (
+        SELECT rate::numeric AS rate
+        FROM exchange_rates
+        WHERE from_currency = t.currency
+          AND to_currency = 'BRL'
+        ORDER BY ABS(date - COALESCE(t.accounting_date, t.transaction_date))
+        LIMIT 1
+      ) er ON t.currency <> 'BRL' AND t.currency IS NOT NULL
+      WHERE EXTRACT(YEAR FROM COALESCE(t.accounting_date, t.transaction_date)) = ${year}
+        AND t.coa_code IS NOT NULL
+      GROUP BY t.coa_code, EXTRACT(MONTH FROM COALESCE(t.accounting_date, t.transaction_date))::int
     `),
   ]);
 

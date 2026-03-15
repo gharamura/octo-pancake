@@ -11,10 +11,12 @@ export class AssetRepository {
         id:             assets.id,
         accountId:      assets.accountId,
         name:           assets.name,
-        type:           assets.type,
+        assetClass:     assets.assetClass,
+        geography:      assets.geography,
+        riskFactor:     assets.riskFactor,
+        liquidity:      assets.liquidity,
         custodian:      assets.custodian,
         currency:       assets.currency,
-        country:        assets.country,
         expirationDate: assets.expirationDate,
         rule:           assets.rule,
         isActive:       assets.isActive,
@@ -39,7 +41,10 @@ export class AssetRepository {
 
   async update(
     id: string,
-    data: Partial<Pick<Asset, "accountId" | "name" | "type" | "custodian" | "currency" | "country" | "expirationDate" | "rule" | "isActive">>
+    data: Partial<Pick<Asset,
+      | "accountId" | "name" | "assetClass" | "geography" | "riskFactor" | "liquidity"
+      | "custodian" | "currency" | "expirationDate" | "rule" | "isActive"
+    >>
   ): Promise<Asset | null> {
     const [asset] = await db.update(assets).set(data).where(eq(assets.id, id)).returning();
     return asset ?? null;

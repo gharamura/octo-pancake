@@ -31,7 +31,7 @@ export async function PATCH(
   }
 
   const { id } = await params;
-  const { transactionDate, accountingDate, accountId, coaCode, amount, currency, recipient, notes } =
+  const { transactionDate, accountingDate, accountId, coaCode, amount, currency, recipient, notes, assetId } =
     await req.json();
 
   if (!transactionDate || !accountId || amount === undefined || amount === null || amount === "") {
@@ -50,6 +50,7 @@ export async function PATCH(
     currency:  currency  || "BRL",
     recipient: recipient || null,
     notes:     notes     || null,
+    assetId:   assetId   || null,
   });
 
   if (!transaction) {
