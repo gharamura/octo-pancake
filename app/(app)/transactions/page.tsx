@@ -8,8 +8,7 @@ export default async function TransactionsPage({
   const { coa, from, to, accFrom, accTo, recipient } = await searchParams;
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-bold">Transactions</h1>
+    <div className="flex h-full min-h-0 flex-col">
       <TransactionTable
         initialCoa={coa}
         initialFrom={from}

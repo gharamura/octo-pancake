@@ -1,6 +1,5 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
 import {
   Command,
   CommandEmpty,
@@ -10,7 +9,6 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Select,
@@ -24,6 +22,40 @@ import {
 import type { FinancialAccount, CoaAccount } from "@/lib/db/schema";
 import { AlertTriangle, Check, ChevronsUpDown } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+
+// ───── Ledger form primitives ─────────────────────────────────────────────
+// Hairline 1px border · mono · tabular-nums · uppercase labels · red "*"
+
+function LmLabel({
+  children,
+  required,
+  hint,
+}: {
+  children: React.ReactNode;
+  required?: boolean;
+  hint?:     string;
+}) {
+  return (
+    <div className="mb-1 flex items-baseline gap-2">
+      <span className="text-[9px] uppercase tracking-[1.2px] text-[color:var(--color-lm-fg-dim)]">
+        {children}
+        {required && <span className="ml-0.5 text-[color:var(--color-lm-loss)]">*</span>}
+      </span>
+      {hint && (
+        <span className="ml-auto text-[9px] text-[color:var(--color-lm-fg-ghost)]">{hint}</span>
+      )}
+    </div>
+  );
+}
+
+const LM_INPUT_CLS =
+  "h-7 w-full rounded-none border border-[color:var(--color-lm-border-2)] bg-transparent px-2.5 font-mono text-[12px] tabular-nums text-[color:var(--color-lm-fg)] placeholder:text-[color:var(--color-lm-fg-dim)] focus-visible:border-[color:var(--color-lm-fg)] focus-visible:ring-0 focus-visible:outline-none";
+const LM_SELECT_TRIGGER_CLS =
+  "h-7 w-full rounded-none border border-[color:var(--color-lm-border-2)] bg-transparent px-2.5 font-mono text-[12px] text-[color:var(--color-lm-fg)] data-[placeholder]:text-[color:var(--color-lm-fg-dim)] focus:border-[color:var(--color-lm-fg)] focus:ring-0";
+const LM_POPOVER_CLS =
+  "rounded-none border border-[color:var(--color-lm-border-2)] bg-[color:var(--color-lm-surface)] font-mono text-[11px] text-[color:var(--color-lm-fg)] p-0";
+const LM_SELECT_CONTENT_CLS =
+  "rounded-none border border-[color:var(--color-lm-border-2)] bg-[color:var(--color-lm-surface)] font-mono text-[11px] text-[color:var(--color-lm-fg)]";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -260,20 +292,27 @@ export function TransactionForm({ transaction, onSuccess, onCreated, onSaved, on
     }
   }
 
+  const hasDupeBlock = !isEdit && duplicates.length > 0 && !dupeChecking;
+  const showAddAnyway = !isEdit && duplicates.length > 0 && !dupeConfirmed;
+
   return (
-    <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }} className="space-y-5">
-      <div className="space-y-1.5">
-        <Label>Account</Label>
+    <form
+      onSubmit={(e) => { e.preventDefault(); handleSubmit(); }}
+      className="flex flex-col gap-3.5 font-mono text-[11px]"
+    >
+      {/* Conta */}
+      <div>
+        <LmLabel required>Conta</LmLabel>
         <Select value={accountId} onValueChange={setAccountId} required>
-          <SelectTrigger>
-            <SelectValue placeholder="Select account…" />
+          <SelectTrigger className={LM_SELECT_TRIGGER_CLS}>
+            <SelectValue placeholder="selecione…" />
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent className={LM_SELECT_CONTENT_CLS}>
             {accounts.map((a) => (
               <SelectItem key={a.id} value={a.id}>
                 <span className="flex flex-col">
                   <span>{a.name}</span>
-                  <span className="text-xs text-muted-foreground">
+                  <span className="text-[10px] text-[color:var(--color-lm-fg-dim)]">
                     {[a.type, a.institution, a.accountNumber].filter(Boolean).join(" · ")}
                   </span>
                 </span>
@@ -283,8 +322,9 @@ export function TransactionForm({ transaction, onSuccess, onCreated, onSaved, on
         </Select>
       </div>
 
-      <div className="space-y-1.5">
-        <Label htmlFor="transactionDate">Transaction Date</Label>
+      {/* Data */}
+      <div>
+        <LmLabel required hint="YYYY-MM-DD">Data</LmLabel>
         <Input
           ref={dateInputRef}
           id="transactionDate"
@@ -296,37 +336,35 @@ export function TransactionForm({ transaction, onSuccess, onCreated, onSaved, on
             if (v) setAccountingDate(`${v.slice(0, 7)}-01`);
           }}
           required
+          className={LM_INPUT_CLS}
         />
       </div>
 
-      <div className="space-y-1.5">
-        <Label htmlFor="recipient">Recipient</Label>
-        <Input
-          id="recipient"
-          value={recipient}
-          onChange={(e) => setRecipient(e.target.value)}
-          placeholder="e.g. Supermarket, Salary"
-        />
-      </div>
-
-      <div className="space-y-1.5">
-        <Label>Amount</Label>
-        <div className="flex gap-2">
-          <Input
-            id="amount"
-            type="number"
-            step="0.01"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            placeholder="0.00"
-            required
-            className="flex-1"
-          />
+      {/* Valor + Moeda */}
+      <div className="flex gap-2.5">
+        <div className="flex-[2]">
+          <LmLabel required hint="negativo = saída">Valor</LmLabel>
+          <div className="flex items-center gap-2 border border-[color:var(--color-lm-border-2)] focus-within:border-[color:var(--color-lm-fg)]">
+            <span className="pl-2.5 text-[11px] text-[color:var(--color-lm-fg-dim)]">R$</span>
+            <Input
+              id="amount"
+              type="number"
+              step="0.01"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder="0,00"
+              required
+              className="h-7 flex-1 rounded-none border-0 bg-transparent px-0 text-right font-mono text-[12px] tabular-nums text-[color:var(--color-lm-fg)] placeholder:text-[color:var(--color-lm-fg-dim)] focus-visible:ring-0 focus-visible:outline-none"
+            />
+          </div>
+        </div>
+        <div className="w-20 shrink-0">
+          <LmLabel>Moeda</LmLabel>
           <Select value={currency} onValueChange={setCurrency}>
-            <SelectTrigger className="w-24 shrink-0">
+            <SelectTrigger className={LM_SELECT_TRIGGER_CLS}>
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className={LM_SELECT_CONTENT_CLS}>
               {CURRENCIES.map((c) => (
                 <SelectItem key={c} value={c}>{c}</SelectItem>
               ))}
@@ -334,19 +372,19 @@ export function TransactionForm({ transaction, onSuccess, onCreated, onSaved, on
           </Select>
         </div>
       </div>
-      <p className="text-xs text-muted-foreground -mt-3">Use a negative value for expenses.</p>
 
-      {!isEdit && duplicates.length > 0 && !dupeChecking && (
-        <div className="rounded-md border border-yellow-400/60 bg-yellow-50 dark:bg-yellow-950/30 p-3 space-y-2">
+      {/* Duplicate warning — hairline pending-amber */}
+      {hasDupeBlock && (
+        <div className="border border-[color:var(--color-lm-pending)] bg-[rgba(200,156,78,0.06)] p-2.5 text-[10px]">
           <div className="flex items-start gap-2">
-            <AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400 shrink-0 mt-0.5" />
-            <div className="flex-1 space-y-1">
-              <p className="text-sm font-medium text-yellow-800 dark:text-yellow-300">
-                Possible duplicate{duplicates.length > 1 ? "s" : ""} found
-              </p>
-              <ul className="space-y-0.5">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[color:var(--color-lm-pending)]" />
+            <div className="flex-1">
+              <div className="mb-1 uppercase tracking-[1px] text-[color:var(--color-lm-pending)]">
+                possível duplicata{duplicates.length > 1 ? "s" : ""}
+              </div>
+              <ul className="space-y-0.5 text-[color:var(--color-lm-fg-muted)]">
                 {duplicates.map(d => (
-                  <li key={d.id} className="text-xs text-yellow-700 dark:text-yellow-400/80">
+                  <li key={d.id}>
                     {d.recipient ?? "—"}{d.coaName ? ` · ${d.coaName}` : ""} · {d.amount}
                   </li>
                 ))}
@@ -356,47 +394,52 @@ export function TransactionForm({ transaction, onSuccess, onCreated, onSaved, on
         </div>
       )}
 
-      <div className="space-y-1.5">
-        <Label htmlFor="accountingDate">Accounting Month</Label>
+      {/* Recipient */}
+      <div>
+        <LmLabel>Recipient</LmLabel>
         <Input
-          id="accountingDate"
-          type="month"
-          value={accountingDate.slice(0, 7)}
-          onChange={(e) =>
-            setAccountingDate(e.target.value ? `${e.target.value}-01` : "")
-          }
+          id="recipient"
+          value={recipient}
+          onChange={(e) => setRecipient(e.target.value)}
+          placeholder="ex: mercado, salário"
+          className={LM_INPUT_CLS}
         />
       </div>
 
-      <div className="space-y-1.5">
-        <Label>COA Account</Label>
+      {/* Categoria · COA (combobox) */}
+      <div>
+        <LmLabel>Categoria · COA</LmLabel>
         <Popover open={coaOpen} onOpenChange={setCoaOpen}>
           <PopoverTrigger asChild>
-            <Button
+            <button
               type="button"
-              variant="outline"
               role="combobox"
               aria-expanded={coaOpen}
-              className="w-full justify-between font-normal"
+              className="flex h-7 w-full items-center justify-between border border-[color:var(--color-lm-border-2)] bg-transparent px-2.5 font-mono text-[12px] text-[color:var(--color-lm-fg)] hover:border-[color:var(--color-lm-fg-muted)] data-[state=open]:border-[color:var(--color-lm-fg)]"
             >
-              <span className="truncate">
-                {selectedCoa ? `${selectedCoa.code} · ${selectedCoa.name}` : "— None —"}
+              <span className="truncate text-left">
+                {selectedCoa
+                  ? <>
+                      <span className="mr-1.5 text-[10px] text-[color:var(--color-lm-fg-dim)]">{selectedCoa.code}</span>
+                      {selectedCoa.name}
+                    </>
+                  : <span className="text-[color:var(--color-lm-fg-dim)]">— nenhum —</span>}
               </span>
-              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-            </Button>
+              <ChevronsUpDown className="ml-2 h-3 w-3 shrink-0 text-[color:var(--color-lm-fg-dim)]" />
+            </button>
           </PopoverTrigger>
-          <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-            <Command>
-              <CommandInput placeholder="Search by code or name…" />
+          <PopoverContent className={`w-[--radix-popover-trigger-width] ${LM_POPOVER_CLS}`} align="start">
+            <Command className="bg-transparent">
+              <CommandInput placeholder="buscar por código ou nome…" />
               <CommandList>
-                <CommandEmpty>No account found.</CommandEmpty>
+                <CommandEmpty>Nenhuma categoria.</CommandEmpty>
                 <CommandGroup>
                   <CommandItem
                     value="__none__"
                     onSelect={() => { setCoaCode("__none__"); setCoaOpen(false); }}
                   >
-                    <Check className={`mr-2 h-4 w-4 ${coaCode === "__none__" ? "opacity-100" : "opacity-0"}`} />
-                    — None —
+                    <Check className={`mr-2 h-3 w-3 ${coaCode === "__none__" ? "opacity-100" : "opacity-0"}`} />
+                    <span className="italic text-[color:var(--color-lm-fg-muted)]">— nenhum —</span>
                   </CommandItem>
                   {leafCoaList.map((c) => (
                     <CommandItem
@@ -414,8 +457,9 @@ export function TransactionForm({ transaction, onSuccess, onCreated, onSaved, on
                         }
                       }}
                     >
-                      <Check className={`mr-2 h-4 w-4 ${coaCode === c.code ? "opacity-100" : "opacity-0"}`} />
-                      {c.code} · {c.name}
+                      <Check className={`mr-2 h-3 w-3 ${coaCode === c.code ? "opacity-100" : "opacity-0"}`} />
+                      <span className="mr-2 text-[10px] text-[color:var(--color-lm-fg-dim)]">{c.code}</span>
+                      {c.name}
                     </CommandItem>
                   ))}
                 </CommandGroup>
@@ -425,26 +469,29 @@ export function TransactionForm({ transaction, onSuccess, onCreated, onSaved, on
         </Popover>
       </div>
 
+      {/* Asset (conditional) */}
       {coaCode !== "__none__" && ASSET_COA_CODES.has(coaCode) && (
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <Label>Asset</Label>
-            <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+        <div>
+          <div className="mb-1 flex items-baseline gap-2">
+            <span className="text-[9px] uppercase tracking-[1.2px] text-[color:var(--color-lm-fg-dim)]">Ativo</span>
+            <label className="ml-auto flex cursor-pointer select-none items-center gap-1.5 text-[9px] uppercase tracking-[1px] text-[color:var(--color-lm-fg-muted)]">
               <input
                 type="checkbox"
                 checked={showAllAssets}
                 onChange={(e) => setShowAllAssets(e.target.checked)}
-                className="rounded border-muted-foreground/40"
+                className="h-3 w-3 accent-[color:var(--color-lm-fg)]"
               />
-              All accounts
+              todas as contas
             </label>
           </div>
           <Select value={assetId ?? "__none__"} onValueChange={(v) => setAssetId(v === "__none__" ? null : v)}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select asset…" />
+            <SelectTrigger className={LM_SELECT_TRIGGER_CLS}>
+              <SelectValue placeholder="selecione ativo…" />
             </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__none__">— None —</SelectItem>
+            <SelectContent className={LM_SELECT_CONTENT_CLS}>
+              <SelectItem value="__none__">
+                <span className="italic text-[color:var(--color-lm-fg-muted)]">— nenhum —</span>
+              </SelectItem>
               {showAllAssets ? (
                 (() => {
                   const grouped = new Map<string, AssetOption[]>();
@@ -455,14 +502,14 @@ export function TransactionForm({ transaction, onSuccess, onCreated, onSaved, on
                   }
                   return Array.from(grouped.entries()).map(([accountName, items]) => (
                     <SelectGroup key={accountName}>
-                      <SelectLabel className="text-xs text-muted-foreground font-semibold">
+                      <SelectLabel className="text-[10px] uppercase tracking-[1px] text-[color:var(--color-lm-fg-dim)]">
                         {accountName}
                       </SelectLabel>
                       {items.map((a) => (
                         <SelectItem key={a.id} value={a.id}>
                           <span className="flex flex-col">
                             <span>{a.name}</span>
-                            <span className="text-xs text-muted-foreground">
+                            <span className="text-[10px] text-[color:var(--color-lm-fg-dim)]">
                               {[
                                 a.assetClass?.replace(/_/g, " "),
                                 a.currency && a.currency !== "BRL" ? a.currency : null,
@@ -480,7 +527,7 @@ export function TransactionForm({ transaction, onSuccess, onCreated, onSaved, on
                   <SelectItem key={a.id} value={a.id}>
                     <span className="flex flex-col">
                       <span>{a.name}</span>
-                      <span className="text-xs text-muted-foreground">
+                      <span className="text-[10px] text-[color:var(--color-lm-fg-dim)]">
                         {[
                           a.assetClass?.replace(/_/g, " "),
                           a.currency && a.currency !== "BRL" ? a.currency : null,
@@ -496,71 +543,108 @@ export function TransactionForm({ transaction, onSuccess, onCreated, onSaved, on
         </div>
       )}
 
-      <div className="space-y-1.5">
-        <Label htmlFor="notes">Notes</Label>
+      {/* Mês contábil */}
+      <div>
+        <LmLabel>Mês contábil</LmLabel>
+        <Input
+          id="accountingDate"
+          type="month"
+          value={accountingDate.slice(0, 7)}
+          onChange={(e) =>
+            setAccountingDate(e.target.value ? `${e.target.value}-01` : "")
+          }
+          className={LM_INPUT_CLS}
+        />
+      </div>
+
+      {/* Notas */}
+      <div>
+        <LmLabel>Notas</LmLabel>
         <Input
           id="notes"
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
-          placeholder="Optional"
+          placeholder="opcional"
+          className={LM_INPUT_CLS}
         />
       </div>
 
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {/* Status bar — ERR/OK + keyboard hints */}
+      <div
+        className="-mx-5 mt-2 flex min-h-6 items-center gap-2.5 border-t border-[color:var(--color-lm-border-2)] px-5 py-1.5 text-[10px] text-[color:var(--color-lm-fg-dim)]"
+        style={{ background: error ? "rgba(200,78,78,0.08)" : "transparent" }}
+      >
+        {error ? (
+          <>
+            <span className="text-[color:var(--color-lm-loss)]">ERR</span>
+            <span className="text-[color:var(--color-lm-loss)]">{error}</span>
+          </>
+        ) : dupeChecking ? (
+          <span>verificando duplicatas…</span>
+        ) : (
+          <span>pronto.</span>
+        )}
+        <span className="flex-1" />
+        <span>
+          <kbd className="mr-1 border border-[color:var(--color-lm-border-2)] bg-[color:var(--color-lm-surface)] px-1 text-[9px]">Tab</kbd>
+          <span className="text-[color:var(--color-lm-fg-ghost)]">próximo</span>
+        </span>
+        <span>
+          <kbd className="mr-1 border border-[color:var(--color-lm-border-2)] bg-[color:var(--color-lm-surface)] px-1 text-[9px]">⏎</kbd>
+          <span className="text-[color:var(--color-lm-fg-ghost)]">salvar</span>
+        </span>
+      </div>
 
-      <div className="flex items-center justify-between pt-2">
+      {/* Action row */}
+      <div className="flex items-center gap-2">
         {isEdit && (
           confirmDelete ? (
-            <div className="flex items-center gap-2">
-              <Button
+            <>
+              <button
                 type="button"
-                variant="destructive"
-                size="sm"
                 disabled={deleting}
                 onClick={handleDelete}
+                className="h-8 border border-[color:var(--color-lm-loss)] bg-[rgba(200,78,78,0.08)] px-3.5 font-mono text-[10px] uppercase tracking-[1px] text-[color:var(--color-lm-loss)] disabled:opacity-50"
               >
-                {deleting ? "Deleting…" : "Confirm Delete"}
-              </Button>
-              <Button
+                {deleting ? "deletando…" : "confirmar delete"}
+              </button>
+              <button
                 type="button"
-                variant="outline"
-                size="sm"
                 onClick={() => setConfirmDelete(false)}
+                className="h-8 border border-[color:var(--color-lm-border-2)] px-3 font-mono text-[10px] uppercase tracking-[1px] text-[color:var(--color-lm-fg-muted)]"
               >
-                Cancel
-              </Button>
-            </div>
+                cancelar
+              </button>
+            </>
           ) : (
-            <Button
+            <button
               type="button"
-              variant="destructive"
-              size="sm"
               onClick={() => setConfirmDelete(true)}
+              className="h-8 border border-[color:var(--color-lm-border-2)] px-3.5 font-mono text-[10px] uppercase tracking-[1px] text-[color:var(--color-lm-loss)] hover:border-[color:var(--color-lm-loss)]"
             >
-              Delete
-            </Button>
+              deletar
+            </button>
           )
         )}
 
-        {!isEdit && duplicates.length > 0 && !dupeConfirmed ? (
-          <Button
+        {showAddAnyway ? (
+          <button
             type="button"
-            variant="warning"
             disabled={saving || !accountId}
-            className="ml-auto"
+            className="ml-auto flex h-8 items-center gap-2 border border-[color:var(--color-lm-pending)] bg-[rgba(200,156,78,0.08)] px-3.5 font-mono text-[10px] uppercase tracking-[1px] text-[color:var(--color-lm-pending)] disabled:opacity-50"
             onClick={() => setDupeConfirmed(true)}
           >
-            Add Anyway
-          </Button>
+            adicionar mesmo assim
+          </button>
         ) : (
-          <Button
+          <button
             type="submit"
-            variant={isEdit ? "warning" : "success"}
             disabled={saving || !accountId}
-            className={isEdit ? "" : "ml-auto"}
+            className="ml-auto flex h-8 items-center justify-center gap-2 bg-[color:var(--color-lm-fg)] px-5 font-mono text-[10px] uppercase tracking-[1px] text-[color:var(--color-lm-bg)] disabled:opacity-40"
           >
-            {saving ? "Saving…" : isEdit ? "Save Changes" : "Add Transaction"}
-          </Button>
+            {saving ? "salvando…" : isEdit ? "salvar" : "adicionar"}
+            <kbd className="border border-[color:var(--color-lm-border-2)] bg-[color:var(--color-lm-surface)] px-1 text-[9px] text-[color:var(--color-lm-fg-muted)]">⏎</kbd>
+          </button>
         )}
       </div>
     </form>

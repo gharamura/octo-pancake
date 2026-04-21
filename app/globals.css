@@ -4,11 +4,36 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* ----------------------------------------------------------------------- */
+/* Ledger · débito/crédito                                                  */
+/*                                                                          */
+/* Dark-first terminal aesthetic. JetBrains Mono everywhere, hairline       */
+/* borders (1px), no rounded corners, scanline background. pt-BR numbers.   */
+/* Semantic green/red only — no decorative color.                           */
+/* ----------------------------------------------------------------------- */
+
 @theme inline {
+  /* Ledger design tokens — raw values exposed for direct use */
+  --color-lm-bg:          #0a0a0a;
+  --color-lm-surface:     #0f0f0f;
+  --color-lm-surface-2:   #141414;
+  --color-lm-border:      #1f1f1f;
+  --color-lm-border-2:    #2a2a2a;
+  --color-lm-fg:          #e8e6df;
+  --color-lm-fg-muted:    #8a8680;
+  --color-lm-fg-dim:      #555049;
+  --color-lm-fg-ghost:    #3a3632;
+  --color-lm-gain:        #6ba368;
+  --color-lm-gain-soft:   rgba(107, 163, 104, 0.10);
+  --color-lm-loss:        #c84e4e;
+  --color-lm-loss-soft:   rgba(200, 78, 78, 0.10);
+  --color-lm-pending:     #c89c4e;
+
+  /* shadcn bridge — keep shadcn components usable, themed Ledger */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans:  var(--font-inter-tight);
+  --font-mono:  var(--font-jetbrains-mono);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -38,89 +63,134 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
-  --radius-2xl: calc(var(--radius) + 8px);
-  --radius-3xl: calc(var(--radius) + 12px);
-  --radius-4xl: calc(var(--radius) + 16px);
+
+  /* No rounded corners — Ledger is sharp */
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+  --radius-2xl: 0px;
+  --radius-3xl: 0px;
+  --radius-4xl: 0px;
 }
 
+/* Ledger is dark-first. Root = dark theme. Light kept as fallback only. */
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --radius: 0;
+
+  --background: #0a0a0a;
+  --foreground: #e8e6df;
+
+  --card:               #0f0f0f;
+  --card-foreground:    #e8e6df;
+  --popover:            #0f0f0f;
+  --popover-foreground: #e8e6df;
+
+  --primary:            #e8e6df;
+  --primary-foreground: #0a0a0a;
+  --secondary:            #141414;
+  --secondary-foreground: #e8e6df;
+
+  --muted:            #141414;
+  --muted-foreground: #8a8680;
+
+  --accent:            #1f1f1f;
+  --accent-foreground: #e8e6df;
+
+  --destructive: #c84e4e;
+
+  --border: #1f1f1f;
+  --input:  #2a2a2a;
+  --ring:   #e8e6df;
+
+  --chart-1: #e8e6df;
+  --chart-2: #6ba368;
+  --chart-3: #c84e4e;
+  --chart-4: #c89c4e;
+  --chart-5: #8a8680;
+
+  --sidebar:                     #0a0a0a;
+  --sidebar-foreground:          #e8e6df;
+  --sidebar-primary:             #e8e6df;
+  --sidebar-primary-foreground:  #0a0a0a;
+  --sidebar-accent:              #141414;
+  --sidebar-accent-foreground:   #e8e6df;
+  --sidebar-border:              #2a2a2a;
+  --sidebar-ring:                #e8e6df;
 }
 
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+/* Scanline overlay — subtle 1px horizontal stripe every 2px */
+.lm-scanlines {
+  background-image: repeating-linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.008) 0px,
+    rgba(255, 255, 255, 0.008) 1px,
+    transparent 1px,
+    transparent 2px
+  );
 }
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
+    border-radius: 0 !important;
   }
   body {
     @apply bg-background text-foreground;
+    font-family: var(--font-jetbrains-mono), "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    font-feature-settings: "tnum" 1, "cv02" 1, "cv03" 1;
+    font-variant-numeric: tabular-nums;
+    background-image: repeating-linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.008) 0px,
+      rgba(255, 255, 255, 0.008) 1px,
+      transparent 1px,
+      transparent 2px
+    );
+  }
+  /* Tabular numbers everywhere — ledger default */
+  input, button, td, th, div, span, p, label {
+    font-variant-numeric: tabular-nums;
+  }
+  /* Blink caret for terminal-style inputs */
+  @keyframes lm-blink {
+    0%, 50%   { opacity: 1; }
+    51%, 100% { opacity: 0; }
+  }
+}
+
+/* Semantic utility classes — used by Ledger components */
+@layer utilities {
+  .lm-hairline        { border-width: 1px; border-color: var(--color-lm-border); }
+  .lm-hairline-strong { border-width: 1px; border-color: var(--color-lm-border-2); }
+
+  .lm-fg          { color: var(--color-lm-fg); }
+  .lm-fg-muted    { color: var(--color-lm-fg-muted); }
+  .lm-fg-dim      { color: var(--color-lm-fg-dim); }
+  .lm-fg-ghost    { color: var(--color-lm-fg-ghost); }
+  .lm-gain        { color: var(--color-lm-gain); }
+  .lm-loss        { color: var(--color-lm-loss); }
+  .lm-pending     { color: var(--color-lm-pending); }
+
+  .lm-bg-gain-soft { background-color: var(--color-lm-gain-soft); }
+  .lm-bg-loss-soft { background-color: var(--color-lm-loss-soft); }
+  .lm-bg-surface   { background-color: var(--color-lm-surface); }
+  .lm-bg-surface-2 { background-color: var(--color-lm-surface-2); }
+
+  .lm-label-upper {
+    color: var(--color-lm-fg-dim);
+    font-size: 9px;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+  }
+
+  .lm-caret {
+    display: inline-block;
+    width: 6px;
+    height: 12px;
+    background: var(--color-lm-fg);
+    margin-left: 2px;
+    vertical-align: middle;
+    animation: lm-blink 1s steps(1) infinite;
   }
 }

@@ -1,22 +1,5 @@
 "use client";
 
-import {
-  type ColumnDef,
-  type Row,
-  getCoreRowModel,
-  useReactTable,
-  flexRender,
-} from "@tanstack/react-table";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -60,15 +43,12 @@ import { SuggestCategoriesSheet } from "@/components/suggest-categories-sheet";
 import type { RecipientDetail } from "@/lib/repositories/recipient.repository";
 import {
   ArrowUpDown,
-  CalendarDays,
   ChevronDown,
   Link2,
   ListFilter,
   Package,
   PackageOpen,
   Pencil,
-  Plus,
-  Search,
   Sparkles,
   Unlink2,
   UserRound,
@@ -83,83 +63,23 @@ const ASSET_COA_CODES = new Set(["1060", "4110", "4210"]);
 // Helpers
 // ---------------------------------------------------------------------------
 
+/** Ledger date: YYYY.MM.DD */
 function formatDate(value: string | null | undefined): string {
   if (!value) return "—";
   const s = value.slice(0, 10);
-  const [year, month, day] = s.split("-");
-  return `${day}/${month}/${year}`;
+  const [y, m, d] = s.split("-");
+  return `${y}.${m}.${d}`;
 }
 
-/** Normalise a Date | string | null to "YYYY-MM-DD" or "". */
 function toISO(value: string | Date | null | undefined): string {
   if (!value) return "";
   if (typeof value === "string") return value.slice(0, 10);
   return value.toISOString().slice(0, 10);
 }
 
-// ---------------------------------------------------------------------------
-// Multi-select filter button
-// ---------------------------------------------------------------------------
-
-function MultiFilter({
-  label,
-  options,
-  selected,
-  onToggle,
-  onClear,
-}: {
-  label: string;
-  options: { value: string; label: string }[];
-  selected: string[];
-  onToggle: (value: string) => void;
-  onClear: () => void;
-}) {
-  const active = selected.length > 0;
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs font-normal">
-          {active
-            ? <ListFilter className="h-3 w-3 text-primary" />
-            : <ChevronDown className="h-3 w-3 opacity-50" />}
-          {label}
-          {active && (
-            <span className="rounded-full bg-primary/10 px-1.5 text-[10px] font-semibold text-primary leading-4">
-              {selected.length}
-            </span>
-          )}
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="min-w-[200px] max-h-72 overflow-y-auto">
-        {options.map((opt) => (
-          <DropdownMenuCheckboxItem
-            key={opt.value}
-            checked={selected.includes(opt.value)}
-            onCheckedChange={() => onToggle(opt.value)}
-            onSelect={(e) => e.preventDefault()}
-          >
-            {opt.label}
-          </DropdownMenuCheckboxItem>
-        ))}
-        {active && (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              className="justify-center text-xs text-muted-foreground"
-              onSelect={onClear}
-            >
-              Clear filter
-            </DropdownMenuItem>
-          </>
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
+function fmtBRL(val: number): string {
+  return val.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
-
-// ---------------------------------------------------------------------------
-// Date-range filter button
-// ---------------------------------------------------------------------------
 
 function daysAgo(n: number): string {
   const d = new Date();
@@ -172,10 +92,103 @@ function today(): string {
 }
 
 const DATE_PRESETS = [
-  { label: "Last 30 days", days: 30 },
-  { label: "Last 60 days", days: 60 },
-  { label: "Last 90 days", days: 90 },
+  { label: "Últimos 30 dias", days: 30 },
+  { label: "Últimos 60 dias", days: 60 },
+  { label: "Últimos 90 dias", days: 90 },
 ] as const;
+
+// ---------------------------------------------------------------------------
+// Filter buttons — styled for Ledger (hairline, mono, uppercase)
+// ---------------------------------------------------------------------------
+
+function LmFilterButton({
+  active,
+  children,
+  onClick,
+  variant = "default",
+}: {
+  active?:  boolean;
+  children: React.ReactNode;
+  onClick?: () => void;
+  variant?: "default" | "primary";
+}) {
+  const bg = variant === "primary"
+    ? "bg-[color:var(--color-lm-fg)] text-[color:var(--color-lm-bg)]"
+    : active
+      ? "bg-[rgba(255,255,255,0.04)] text-[color:var(--color-lm-fg)]"
+      : "bg-transparent text-[color:var(--color-lm-fg-muted)] hover:text-[color:var(--color-lm-fg)]";
+  return (
+    <button
+      onClick={onClick}
+      className={`h-7 whitespace-nowrap border border-[color:var(--color-lm-border-2)] px-2.5 font-mono text-[10px] tracking-[1px] uppercase ${bg}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function MultiFilter({
+  label,
+  options,
+  selected,
+  onToggle,
+  onClear,
+}: {
+  label:    string;
+  options:  { value: string; label: string }[];
+  selected: string[];
+  onToggle: (value: string) => void;
+  onClear:  () => void;
+}) {
+  const active = selected.length > 0;
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          className={`flex h-7 items-center gap-1.5 whitespace-nowrap border border-[color:var(--color-lm-border-2)] px-2.5 font-mono text-[10px] tracking-[1px] uppercase ${
+            active
+              ? "bg-[rgba(255,255,255,0.04)] text-[color:var(--color-lm-fg)]"
+              : "text-[color:var(--color-lm-fg-muted)] hover:text-[color:var(--color-lm-fg)]"
+          }`}
+        >
+          {active
+            ? <ListFilter className="h-3 w-3 text-[color:var(--color-lm-fg)]" />
+            : <ChevronDown className="h-3 w-3 opacity-50" />}
+          {label}
+          {active && (
+            <span className="bg-[color:var(--color-lm-fg)] px-1 text-[9px] font-semibold text-[color:var(--color-lm-bg)] leading-[14px]">
+              {selected.length}
+            </span>
+          )}
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="min-w-[220px] max-h-72 overflow-y-auto border-[color:var(--color-lm-border-2)] bg-[color:var(--color-lm-surface)] font-mono text-xs">
+        {options.map((opt) => (
+          <DropdownMenuCheckboxItem
+            key={opt.value}
+            checked={selected.includes(opt.value)}
+            onCheckedChange={() => onToggle(opt.value)}
+            onSelect={(e) => e.preventDefault()}
+            className="text-[color:var(--color-lm-fg)]"
+          >
+            {opt.label}
+          </DropdownMenuCheckboxItem>
+        ))}
+        {active && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="justify-center text-[10px] uppercase tracking-[1px] text-[color:var(--color-lm-fg-muted)]"
+              onSelect={onClear}
+            >
+              Limpar
+            </DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
 
 function DateRangeFilter({
   label,
@@ -186,33 +199,37 @@ function DateRangeFilter({
   onClear,
 }: {
   label: string;
-  from: string;
-  to: string;
+  from:  string;
+  to:    string;
   onFrom: (v: string) => void;
-  onTo: (v: string) => void;
+  onTo:   (v: string) => void;
   onClear: () => void;
 }) {
   const active = !!from || !!to;
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs font-normal">
-          <CalendarDays className="h-3 w-3 opacity-50" />
+        <button
+          className={`flex h-7 items-center gap-1.5 whitespace-nowrap border border-[color:var(--color-lm-border-2)] px-2.5 font-mono text-[10px] tracking-[1px] uppercase ${
+            active
+              ? "bg-[rgba(255,255,255,0.04)] text-[color:var(--color-lm-fg)]"
+              : "text-[color:var(--color-lm-fg-muted)] hover:text-[color:var(--color-lm-fg)]"
+          }`}
+        >
           {label}
-          {active && <span className="h-1.5 w-1.5 rounded-full bg-primary" />}
-        </Button>
+          {active && <span className="h-1.5 w-1.5 bg-[color:var(--color-lm-fg)]" />}
+        </button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-52 p-3 space-y-2.5">
-        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+      <PopoverContent align="start" className="w-56 space-y-2.5 border-[color:var(--color-lm-border-2)] bg-[color:var(--color-lm-surface)] p-3 font-mono">
+        <p className="text-[9px] tracking-[1.2px] uppercase text-[color:var(--color-lm-fg-dim)]">
           {label}
         </p>
 
-        {/* Presets */}
         <div className="flex flex-col gap-1">
           {DATE_PRESETS.map(({ label: pl, days }) => (
             <button
               key={days}
-              className="text-left text-xs px-2 py-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+              className="rounded-none px-2 py-1 text-left text-[10px] uppercase tracking-[1px] text-[color:var(--color-lm-fg-muted)] hover:bg-[rgba(255,255,255,0.04)] hover:text-[color:var(--color-lm-fg)]"
               onClick={() => { onFrom(daysAgo(days)); onTo(today()); }}
             >
               {pl}
@@ -220,40 +237,39 @@ function DateRangeFilter({
           ))}
         </div>
 
-        <div className="border-t pt-2 space-y-2">
+        <div className="space-y-2 border-t border-[color:var(--color-lm-border)] pt-2">
           <div className="space-y-1">
-            <Label className="text-xs">From</Label>
+            <Label className="text-[9px] uppercase tracking-[1.2px] text-[color:var(--color-lm-fg-dim)]">De</Label>
             <Input
               type="date"
               value={from}
               onChange={(e) => onFrom(e.target.value)}
-              className="h-7 text-xs"
+              className="h-7 border-[color:var(--color-lm-border-2)] bg-transparent font-mono text-[11px] text-[color:var(--color-lm-fg)]"
             />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">To</Label>
+            <Label className="text-[9px] uppercase tracking-[1.2px] text-[color:var(--color-lm-fg-dim)]">Até</Label>
             <Input
               type="date"
               value={to}
               onChange={(e) => onTo(e.target.value)}
-              className="h-7 text-xs"
+              className="h-7 border-[color:var(--color-lm-border-2)] bg-transparent font-mono text-[11px] text-[color:var(--color-lm-fg)]"
             />
           </div>
         </div>
 
         {active && (
-          <Button variant="ghost" size="sm" className="w-full h-7 text-xs" onClick={onClear}>
-            Clear
-          </Button>
+          <button
+            className="h-7 w-full border border-[color:var(--color-lm-border-2)] text-[10px] uppercase tracking-[1px] text-[color:var(--color-lm-fg-muted)] hover:text-[color:var(--color-lm-fg)]"
+            onClick={onClear}
+          >
+            Limpar
+          </button>
         )}
       </PopoverContent>
     </Popover>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Single-month filter button
-// ---------------------------------------------------------------------------
 
 function MonthFilter({
   label,
@@ -264,35 +280,43 @@ function MonthFilter({
   label: string;
   value: string;
   onChange: (v: string) => void;
-  onClear: () => void;
+  onClear:  () => void;
 }) {
   const active = !!value;
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs font-normal">
-          <CalendarDays className="h-3 w-3 opacity-50" />
+        <button
+          className={`flex h-7 items-center gap-1.5 whitespace-nowrap border border-[color:var(--color-lm-border-2)] px-2.5 font-mono text-[10px] tracking-[1px] uppercase ${
+            active
+              ? "bg-[rgba(255,255,255,0.04)] text-[color:var(--color-lm-fg)]"
+              : "text-[color:var(--color-lm-fg-muted)] hover:text-[color:var(--color-lm-fg)]"
+          }`}
+        >
           {label}
-          {active && <span className="h-1.5 w-1.5 rounded-full bg-primary" />}
-        </Button>
+          {active && <span className="h-1.5 w-1.5 bg-[color:var(--color-lm-fg)]" />}
+        </button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-52 p-3 space-y-2.5">
-        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+      <PopoverContent align="start" className="w-56 space-y-2.5 border-[color:var(--color-lm-border-2)] bg-[color:var(--color-lm-surface)] p-3 font-mono">
+        <p className="text-[9px] tracking-[1.2px] uppercase text-[color:var(--color-lm-fg-dim)]">
           {label}
         </p>
         <div className="space-y-1">
-          <Label className="text-xs">Month</Label>
+          <Label className="text-[9px] uppercase tracking-[1.2px] text-[color:var(--color-lm-fg-dim)]">Mês</Label>
           <Input
             type="month"
             value={value}
             onChange={(e) => onChange(e.target.value)}
-            className="h-7 text-xs"
+            className="h-7 border-[color:var(--color-lm-border-2)] bg-transparent font-mono text-[11px] text-[color:var(--color-lm-fg)]"
           />
         </div>
         {active && (
-          <Button variant="ghost" size="sm" className="w-full h-7 text-xs" onClick={onClear}>
-            Clear
-          </Button>
+          <button
+            className="h-7 w-full border border-[color:var(--color-lm-border-2)] text-[10px] uppercase tracking-[1px] text-[color:var(--color-lm-fg-muted)] hover:text-[color:var(--color-lm-fg)]"
+            onClick={onClear}
+          >
+            Limpar
+          </button>
         )}
       </PopoverContent>
     </Popover>
@@ -319,9 +343,9 @@ function BulkEditBar({
   onApply: (data: { coaCode?: string | null; accountingDate?: string | null; recipientId?: string | null }) => Promise<void>;
   onClear: () => void;
 }) {
-  const [coaCode,         setCoaCode]         = useState("");   // "" = no change; "__clear__" = set null
-  const [accountingMonth, setAccountingMonth] = useState("");   // "YYYY-MM" or ""
-  const [recipientId,     setRecipientId]     = useState("");   // "" = no change; "__clear__" = set null
+  const [coaCode,         setCoaCode]         = useState("");
+  const [accountingMonth, setAccountingMonth] = useState("");
+  const [recipientId,     setRecipientId]     = useState("");
   const [recipientSearch, setRecipientSearch] = useState("");
   const [recipientOpen,   setRecipientOpen]   = useState(false);
   const [applying,        setApplying]        = useState(false);
@@ -333,9 +357,9 @@ function BulkEditBar({
     if (!hasChanges) return;
     setApplying(true);
     const data: { coaCode?: string | null; accountingDate?: string | null; recipientId?: string | null } = {};
-    if (coaCode)     data.coaCode     = coaCode     === "__clear__" ? null : coaCode;
+    if (coaCode)         data.coaCode        = coaCode     === "__clear__" ? null : coaCode;
     if (accountingMonth) data.accountingDate = `${accountingMonth}-01`;
-    if (recipientId) data.recipientId = recipientId === "__clear__" ? null : recipientId;
+    if (recipientId)     data.recipientId    = recipientId === "__clear__" ? null : recipientId;
     await onApply(data);
     setApplying(false);
     setCoaCode("");
@@ -345,57 +369,55 @@ function BulkEditBar({
   };
 
   return (
-    <div className="flex items-center gap-2 flex-wrap rounded-md border border-primary/20 bg-primary/5 px-3 py-2">
-      <span className="text-sm font-medium text-primary">
-        {selectedCount} selected
+    <div className="flex flex-wrap items-center gap-2 border-y border-[color:var(--color-lm-border-2)] bg-[rgba(255,255,255,0.02)] px-3.5 py-2 font-mono text-[11px]">
+      <span className="text-[color:var(--color-lm-fg)]">
+        <span className="text-[color:var(--color-lm-fg-muted)]">sel</span> {selectedCount}
       </span>
-      <div className="h-4 w-px bg-border" />
+      <span className="text-[color:var(--color-lm-fg-dim)]">·</span>
 
-      {/* COA selector */}
       <Select value={coaCode} onValueChange={setCoaCode}>
-        <SelectTrigger className="h-8 w-60 text-xs">
-          <SelectValue placeholder="Set COA account…" />
+        <SelectTrigger className="h-7 w-60 border-[color:var(--color-lm-border-2)] bg-transparent text-[11px]">
+          <SelectValue placeholder="set coa…" />
         </SelectTrigger>
-        <SelectContent>
+        <SelectContent className="border-[color:var(--color-lm-border-2)] bg-[color:var(--color-lm-surface)] font-mono">
           <SelectItem value="__clear__">
-            <span className="text-muted-foreground italic">— Clear COA —</span>
+            <span className="italic text-[color:var(--color-lm-fg-muted)]">— limpar coa —</span>
           </SelectItem>
           {coaOptions.map((c) => (
             <SelectItem key={c.code} value={c.code}>
-              <span className="font-mono text-xs text-muted-foreground mr-1.5">{c.code}</span>
+              <span className="font-mono text-[10px] text-[color:var(--color-lm-fg-muted)] mr-1.5">{c.code}</span>
               {c.name}
             </SelectItem>
           ))}
         </SelectContent>
       </Select>
 
-      {/* Recipient picker */}
       <Popover open={recipientOpen} onOpenChange={setRecipientOpen}>
         <PopoverTrigger asChild>
-          <Button variant="outline" className="h-8 w-52 justify-between text-xs font-normal">
-            <span className={selectedRecipientName ? "" : "text-muted-foreground"}>
+          <button className="flex h-7 w-52 items-center justify-between border border-[color:var(--color-lm-border-2)] bg-transparent px-2.5 text-[11px]">
+            <span className={selectedRecipientName ? "text-[color:var(--color-lm-fg)]" : "text-[color:var(--color-lm-fg-muted)]"}>
               {recipientId === "__clear__"
-                ? <span className="italic text-muted-foreground">— Clear recipient —</span>
-                : selectedRecipientName ?? "Set recipient…"}
+                ? <span className="italic text-[color:var(--color-lm-fg-muted)]">— limpar recipient —</span>
+                : selectedRecipientName ?? "set recipient…"}
             </span>
-            <ChevronDown className="ml-1 h-3 w-3 shrink-0 opacity-50" />
-          </Button>
+            <ChevronDown className="h-3 w-3 shrink-0 opacity-50" />
+          </button>
         </PopoverTrigger>
-        <PopoverContent className="w-64 p-0" align="start">
-          <Command>
+        <PopoverContent className="w-64 border-[color:var(--color-lm-border-2)] bg-[color:var(--color-lm-surface)] p-0 font-mono" align="start">
+          <Command className="bg-transparent">
             <CommandInput
-              placeholder="Search recipients…"
+              placeholder="Buscar recipient…"
               value={recipientSearch}
               onValueChange={setRecipientSearch}
             />
             <CommandList>
-              <CommandEmpty>No recipient found.</CommandEmpty>
+              <CommandEmpty>Nenhum recipient.</CommandEmpty>
               <CommandGroup>
                 <CommandItem
                   value="__clear__"
                   onSelect={() => { setRecipientId("__clear__"); setRecipientOpen(false); }}
                 >
-                  <span className="italic text-muted-foreground text-xs">— Clear recipient —</span>
+                  <span className="italic text-[11px] text-[color:var(--color-lm-fg-muted)]">— limpar recipient —</span>
                 </CommandItem>
                 {recipients.map((r) => (
                   <CommandItem
@@ -412,23 +434,72 @@ function BulkEditBar({
         </PopoverContent>
       </Popover>
 
-      {/* Accounting period (month picker) */}
       <Input
         type="month"
         value={accountingMonth}
         onChange={(e) => setAccountingMonth(e.target.value)}
-        className="h-8 w-40 text-xs"
-        placeholder="Accounting period"
+        className="h-7 w-40 border-[color:var(--color-lm-border-2)] bg-transparent text-[11px]"
+        placeholder="mês contábil"
       />
 
-      <Button size="sm" className="h-8" onClick={handleApply} disabled={!hasChanges || applying}>
-        {applying ? "Applying…" : "Apply"}
-      </Button>
+      <button
+        onClick={handleApply}
+        disabled={!hasChanges || applying}
+        className="h-7 bg-[color:var(--color-lm-fg)] px-3 font-mono text-[10px] tracking-[1px] uppercase text-[color:var(--color-lm-bg)] disabled:opacity-40"
+      >
+        {applying ? "aplicando…" : "aplicar"}
+      </button>
 
-      <Button variant="ghost" size="sm" className="h-8 ml-auto text-muted-foreground" onClick={onClear}>
-        <X className="h-3 w-3 mr-1" />
-        Clear selection
-      </Button>
+      <button
+        onClick={onClear}
+        className="ml-auto flex h-7 items-center gap-1 border border-[color:var(--color-lm-border-2)] px-2.5 text-[10px] uppercase tracking-[1px] text-[color:var(--color-lm-fg-muted)] hover:text-[color:var(--color-lm-fg)]"
+      >
+        <X className="h-3 w-3" /> limpar seleção
+      </button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// KPI band
+// ---------------------------------------------------------------------------
+
+function LmKpi({
+  label,
+  value,
+  currency = true,
+  negative,
+  sub,
+  emphasis,
+}: {
+  label:    string;
+  value:    number | string;
+  currency?: boolean;
+  negative?: boolean;
+  sub?:      string;
+  emphasis?: boolean;
+}) {
+  const color = negative
+    ? "var(--color-lm-loss)"
+    : "var(--color-lm-fg)";
+  return (
+    <div className="min-w-0 border-r border-[color:var(--color-lm-border)] px-3.5 py-3 last:border-r-0">
+      <div className="lm-label-upper mb-1.5">{label}</div>
+      <div
+        className="font-mono tabular-nums tracking-[-0.2px]"
+        style={{ color, fontSize: emphasis ? 18 : 15 }}
+      >
+        {currency && typeof value === "number" ? (
+          <>
+            {negative ? "−" : " "}
+            <span className="mr-[3px] text-[11px] text-[color:var(--color-lm-fg-dim)]">R$</span>
+            {fmtBRL(Math.abs(value))}
+          </>
+        ) : (
+          <>{value}</>
+        )}
+      </div>
+      {sub && <div className="mt-1 font-mono text-[9px] text-[color:var(--color-lm-fg-dim)]">{sub}</div>}
     </div>
   );
 }
@@ -444,40 +515,242 @@ interface SheetState {
 }
 
 // ---------------------------------------------------------------------------
-// Memoised table row — prevents all rows re-rendering on checkbox toggle
+// Transaction row (CSS-grid, memoized)
 // ---------------------------------------------------------------------------
 
-type MemoRowProps = {
-  row:        Row<TransactionRow>;
-  isSelected: boolean;
-  onToggle:   (id: string) => void;
+// chk(28) Data(88) Recipient(1fr) Notes(220) Conta(120) Cat·COA(140) CCY(44)
+// Débito(110) Crédito(110) Link(32) Stat(44) Edit(32)
+const ROW_TEMPLATE =
+  "28px 88px minmax(160px, 1fr) 220px 120px 140px 44px 110px 110px 32px 44px 32px";
+
+type TxRowProps = {
+  row:          TransactionRow;
+  isSelected:   boolean;
+  isNewDay:     boolean;
+  onToggle:     (id: string) => void;
+  onEdit:       (t: TransactionRow) => void;
+  onFlipSign:   (t: TransactionRow) => void;
+  onLink:       (t: TransactionRow) => void;
+  onUnlink:     (t: TransactionRow) => void;
+  onLinkRecipient: (t: TransactionRow) => void;
+  stripe:       boolean;
 };
 
-const MemoRow = memo(
-  function MemoRow({ row, isSelected, onToggle }: MemoRowProps) {
+const TxRow = memo(
+  function TxRow({
+    row: t,
+    isSelected,
+    isNewDay,
+    onToggle,
+    onEdit,
+    onFlipSign,
+    onLink,
+    onUnlink,
+    onLinkRecipient,
+    stripe,
+  }: TxRowProps) {
+    const amountNum = parseFloat(t.amount ?? "0");
+    const isDebit   = amountNum < 0;
+    const abs       = fmtBRL(Math.abs(amountNum));
+    const currency  = t.currency ?? "BRL";
+    const isForeign = currency !== "BRL";
+
+    const dateStr = formatDate(t.transactionDate);
+
+    const directLinked = !!t.recipientId;
+    const aliasLinked  = !directLinked && !!t.aliasRecipientId;
+
+    const isTransferCoa = TRANSFER_CODES.has(t.coaCode ?? "");
+    const isAssetCoa    = ASSET_COA_CODES.has(t.coaCode ?? "");
+
     return (
-      <TableRow>
-        <TableCell className="pr-0">
+      <div
+        className="group grid items-center border-b border-[color:var(--color-lm-border)] px-3.5 py-1 text-[11px]"
+        style={{
+          gridTemplateColumns: ROW_TEMPLATE,
+          gap: 8,
+          background: stripe ? "rgba(255,255,255,0.012)" : "transparent",
+        }}
+      >
+        {/* checkbox */}
+        <div>
           <input
             type="checkbox"
             checked={isSelected}
-            onChange={() => onToggle(row.original.id)}
+            onChange={() => onToggle(t.id)}
             onClick={(e) => e.stopPropagation()}
-            className="h-4 w-4 cursor-pointer rounded border-border accent-primary"
+            className="h-3.5 w-3.5 cursor-pointer border-[color:var(--color-lm-border-2)] accent-[color:var(--color-lm-fg)]"
           />
-        </TableCell>
-        {row.getVisibleCells().map((cell) => (
-          <TableCell key={cell.id}>
-            {flexRender(cell.column.columnDef.cell, cell.getContext())}
-          </TableCell>
-        ))}
-      </TableRow>
+        </div>
+
+        {/* date */}
+        <div
+          className="font-mono tabular-nums"
+          style={{ color: isNewDay ? "var(--color-lm-fg-muted)" : "var(--color-lm-fg-ghost)" }}
+        >
+          {isNewDay ? dateStr : "·"}
+        </div>
+
+        {/* recipient */}
+        <div className="flex min-w-0 items-center gap-1">
+          <span
+            className="truncate"
+            style={{ color: directLinked ? "var(--color-lm-fg)" : "var(--color-lm-fg-muted)" }}
+          >
+            {directLinked
+              ? (t.linkedRecipientName ?? t.recipient ?? "—")
+              : (t.recipient ?? "—")}
+          </span>
+          <button
+            className={`text-[color:var(--color-lm-fg-ghost)] hover:text-[color:var(--color-lm-fg)] ${
+              directLinked ? "opacity-60 hover:opacity-100" : "opacity-0 group-hover:opacity-60"
+            }`}
+            onClick={(e) => { e.stopPropagation(); onLinkRecipient(t); }}
+            title={directLinked ? "Trocar recipient" : "Linkar recipient"}
+          >
+            <UserRound className="h-3 w-3" />
+          </button>
+          {aliasLinked && (
+            <span className="truncate text-[9px] text-[color:var(--color-lm-pending)]">
+              {t.aliasRecipientName}
+            </span>
+          )}
+        </div>
+
+        {/* notes / description */}
+        <div className="min-w-0 truncate text-[color:var(--color-lm-fg-muted)]">
+          {t.notes ?? "—"}
+        </div>
+
+        {/* account */}
+        <div className="min-w-0 truncate text-[color:var(--color-lm-fg-muted)]">
+          {t.accountName ?? "—"}
+        </div>
+
+        {/* coa */}
+        <div className="min-w-0 truncate text-[color:var(--color-lm-fg-muted)]">
+          {t.coaCode ? (
+            <>
+              <span className="mr-1.5 text-[9px] text-[color:var(--color-lm-fg-dim)]">{t.coaCode}</span>
+              {t.coaName}
+            </>
+          ) : <span className="text-[color:var(--color-lm-fg-ghost)]">—</span>}
+        </div>
+
+        {/* CCY — foreign currencies highlighted pending-amber */}
+        <div
+          className="text-right text-[9px] tabular-nums"
+          style={{ color: isForeign ? "var(--color-lm-pending)" : "var(--color-lm-fg-dim)" }}
+        >
+          {currency}
+        </div>
+
+        {/* Débito */}
+        <div
+          className="text-right tabular-nums"
+          style={{
+            color:      isDebit ? "var(--color-lm-loss)"       : "var(--color-lm-fg-ghost)",
+            background: isDebit ? "var(--color-lm-loss-soft)" : "transparent",
+            padding:    isDebit ? "2px 4px" : 0,
+            margin:     isDebit ? "-2px 0"  : 0,
+          }}
+        >
+          {isDebit ? abs : "—"}
+        </div>
+
+        {/* Crédito */}
+        <div
+          className="flex items-center justify-end gap-1 tabular-nums"
+          style={{
+            color:      !isDebit ? "var(--color-lm-gain)"      : "var(--color-lm-fg-ghost)",
+            background: !isDebit ? "var(--color-lm-gain-soft)" : "transparent",
+            padding:    !isDebit ? "2px 4px" : 0,
+            margin:     !isDebit ? "-2px 0"  : 0,
+          }}
+        >
+          <span>{!isDebit ? abs : "—"}</span>
+          <button
+            className="opacity-0 group-hover:opacity-60 hover:!opacity-100 text-[color:var(--color-lm-fg-dim)] hover:text-[color:var(--color-lm-fg)]"
+            onClick={(e) => { e.stopPropagation(); onFlipSign(t); }}
+            title="Inverter sinal"
+          >
+            <ArrowUpDown className="h-3 w-3" />
+          </button>
+        </div>
+
+        {/* link indicator (transfer / asset) */}
+        <div className="flex items-center justify-center">
+          {isTransferCoa && (
+            t.transferId ? (
+              <button
+                title="Transferência linkada · desvincular"
+                className="text-[color:var(--color-lm-gain)]"
+                onClick={(e) => { e.stopPropagation(); onUnlink(t); }}
+              >
+                <Link2 className="h-3.5 w-3.5" />
+              </button>
+            ) : (
+              <button
+                title="Transferência órfã · linkar"
+                className="text-[color:var(--color-lm-pending)]"
+                onClick={(e) => { e.stopPropagation(); onLink(t); }}
+              >
+                <Unlink2 className="h-3.5 w-3.5" />
+              </button>
+            )
+          )}
+          {isAssetCoa && (
+            t.assetId ? (
+              <span className="text-[color:var(--color-lm-gain)]" title={t.assetName ?? "Ativo linkado"}>
+                <Package className="h-3.5 w-3.5" />
+              </span>
+            ) : (
+              <button
+                title="Ativo órfão · editar para linkar"
+                className="text-[color:var(--color-lm-pending)]"
+                onClick={(e) => { e.stopPropagation(); onEdit(t); }}
+              >
+                <PackageOpen className="h-3.5 w-3.5" />
+              </button>
+            )
+          )}
+        </div>
+
+        {/* status */}
+        <div className="flex justify-end">
+          {!t.coaCode ? (
+            <span className="border border-[color:var(--color-lm-pending)] px-[3px] text-[9px] tracking-[0.5px] text-[color:var(--color-lm-pending)]">
+              PEND
+            </span>
+          ) : (
+            <span className="text-[9px] text-[color:var(--color-lm-fg-dim)]">OK</span>
+          )}
+        </div>
+
+        {/* edit */}
+        <div className="flex justify-end">
+          <button
+            className="text-[color:var(--color-lm-fg-ghost)] hover:text-[color:var(--color-lm-fg)]"
+            onClick={(e) => { e.stopPropagation(); onEdit(t); }}
+            title="Editar"
+          >
+            <Pencil className="h-3 w-3" />
+          </button>
+        </div>
+      </div>
     );
   },
   (prev, next) =>
-    prev.row.original === next.row.original &&
-    prev.isSelected   === next.isSelected   &&
-    prev.onToggle     === next.onToggle
+    prev.row        === next.row &&
+    prev.isSelected === next.isSelected &&
+    prev.isNewDay   === next.isNewDay &&
+    prev.stripe     === next.stripe &&
+    prev.onToggle   === next.onToggle &&
+    prev.onEdit     === next.onEdit &&
+    prev.onFlipSign === next.onFlipSign &&
+    prev.onLink     === next.onLink &&
+    prev.onUnlink   === next.onUnlink &&
+    prev.onLinkRecipient === next.onLinkRecipient
 );
 
 // ---------------------------------------------------------------------------
@@ -502,9 +775,6 @@ export function TransactionTable({ initialCoa, initialFrom, initialTo, initialAc
   const [filterAccounts,  setFilterAccounts]  = useState<string[]>([]);
   const [filterCoa,       setFilterCoa]       = useState<string[]>(() => initialCoa ? [initialCoa] : []);
   const [filterRecipient, setFilterRecipient] = useState(initialRecipient ?? "");
-  // If an accounting date range is provided (e.g. from COA report), skip the
-  // default 30-day transaction date filter so the accounting date filter
-  // (client-side) can match across the full dataset.
   const [txFrom,  setTxFrom]  = useState(() => (initialAccFrom || initialRecipient) ? (initialFrom ?? "") : (initialFrom ?? daysAgo(30)));
   const [txTo,    setTxTo]    = useState(() => (initialAccTo   || initialRecipient) ? (initialTo   ?? "") : (initialTo   ?? today()));
   const [accMonth, setAccMonth] = useState(() => initialAccFrom?.slice(0, 7) ?? "");
@@ -520,21 +790,17 @@ export function TransactionTable({ initialCoa, initialFrom, initialTo, initialAc
   const [draftTxTo,    setDraftTxTo]    = useState(() => (initialAccTo   || initialRecipient) ? (initialTo   ?? "") : (initialTo   ?? today()));
   const [draftAccMonth, setDraftAccMonth] = useState(() => initialAccFrom?.slice(0, 7) ?? "");
 
-  // ── Transfer dialog state ─────────────────────────────────────────────────
   const [linkDialog,   setLinkDialog]   = useState<{ open: boolean; transaction: TransactionRow | null }>({ open: false, transaction: null });
   const [unlinkDialog, setUnlinkDialog] = useState<{ open: boolean; transaction: TransactionRow | null }>({ open: false, transaction: null });
 
-  // ── Bulk edit state ───────────────────────────────────────────────────────
   const [selectedIds,   setSelectedIds]   = useState<Set<string>>(new Set());
   const [allCoaOptions, setAllCoaOptions] = useState<CoaOption[]>([]);
 
-  // ── Link recipient dialog state ───────────────────────────────────────────
   const [linkRecipientDialog, setLinkRecipientDialog] = useState<{
     open: boolean; transaction: TransactionRow | null;
   }>({ open: false, transaction: null });
   const [allRecipients, setAllRecipients] = useState<RecipientDetail[]>([]);
 
-  // ── Suggest categories sheet state ────────────────────────────────────────
   const [suggestSheet, setSuggestSheet] = useState(false);
 
   // ── Data fetching ─────────────────────────────────────────────────────────
@@ -634,7 +900,11 @@ export function TransactionTable({ initialCoa, initialFrom, initialTo, initialAc
     });
   }, []);
 
-  // ── Filter options (derived from raw data) ────────────────────────────────
+  const openLinkDialog   = useCallback((t: TransactionRow) => setLinkDialog({ open: true, transaction: t }), []);
+  const openUnlinkDialog = useCallback((t: TransactionRow) => setUnlinkDialog({ open: true, transaction: t }), []);
+  const openLinkRecipient = useCallback((t: TransactionRow) => setLinkRecipientDialog({ open: true, transaction: t }), []);
+
+  // ── Filter options (derived) ──────────────────────────────────────────────
   const accountOptions = useMemo(() =>
     Array.from(new Set(transactions.map((t) => t.accountName).filter(Boolean) as string[]))
       .sort()
@@ -768,7 +1038,6 @@ export function TransactionTable({ initialCoa, initialFrom, initialTo, initialAc
     setSelectedIds(new Set());
   }, [selectedIds, fetchTransactions]);
 
-  // ── Header checkbox ref (indeterminate state) ─────────────────────────────
   const headerCheckboxRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -779,254 +1048,37 @@ export function TransactionTable({ initialCoa, initialFrom, initialTo, initialAc
     el.indeterminate = n > 0 && n < filtered.length;
   }, [selectedIds, filtered]);
 
-  // ── Columns ───────────────────────────────────────────────────────────────
-  const columns = useMemo<ColumnDef<TransactionRow>[]>(
-    () => [
-      {
-        accessorKey: "transactionDate",
-        header: "Date",
-        cell: ({ row }) => (
-          <span className="tabular-nums text-sm">
-            {formatDate(row.getValue("transactionDate"))}
-          </span>
-        ),
-      },
-      {
-        accessorKey: "accountName",
-        header: "Account",
-        cell: ({ row }) => (
-          <span className="font-medium">{row.getValue("accountName") ?? "—"}</span>
-        ),
-      },
-      {
-        accessorKey: "amount",
-        header: "Amount",
-        cell: ({ row }) => {
-          const val      = parseFloat(row.getValue("amount") ?? "0");
-          const currency = row.original.currency ?? "BRL";
-          const color    = val >= 0 ? "text-green-700 dark:text-green-400" : "text-red-600 dark:text-red-400";
-          return (
-            <div className="flex items-center gap-1">
-              <span className={`tabular-nums font-medium ${color}`}>
-                {val.toLocaleString("pt-BR", { style: "currency", currency })}
-              </span>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-5 w-5 text-muted-foreground/40 hover:text-muted-foreground"
-                onClick={(e) => { e.stopPropagation(); flipSign(row.original); }}
-                title={val >= 0 ? "Mark as expense (negative)" : "Mark as income (positive)"}
-              >
-                <ArrowUpDown className="h-3 w-3" />
-              </Button>
-            </div>
-          );
-        },
-      },
-      {
-        id: "recipient",
-        header: "Recipient",
-        cell: ({ row }) => {
-          const t = row.original;
-          const directLinked = !!t.recipientId;
-          const aliasLinked  = !directLinked && !!t.aliasRecipientId;
-          return (
-            <div className="flex flex-col gap-0.5 group/rec">
-              <div className="flex items-center gap-1">
-                <span className={directLinked ? "font-medium text-foreground" : "text-muted-foreground"}>
-                  {directLinked ? (t.linkedRecipientName ?? t.recipient ?? "—") : (t.recipient ?? "—")}
-                </span>
-                <button
-                  title={directLinked ? "Change linked recipient" : "Link to recipient"}
-                  className={`transition-opacity text-muted-foreground hover:text-foreground ${
-                    directLinked ? "opacity-60 hover:opacity-100" : "opacity-0 group-hover/rec:opacity-60 hover:!opacity-100"
-                  }`}
-                  onClick={(e) => { e.stopPropagation(); setLinkRecipientDialog({ open: true, transaction: t }); }}
-                >
-                  <UserRound className="h-3.5 w-3.5" />
-                </button>
-              </div>
-              {aliasLinked && (
-                <span className="text-[10px] text-primary/80 leading-none">
-                  {t.aliasRecipientName}
-                </span>
-              )}
-            </div>
-          );
-        },
-      },
-      {
-        accessorKey: "coaName",
-        header: "COA Account",
-        cell: ({ row }) => {
-          const t = row.original;
-          if (!t.coaCode) return <span className="text-muted-foreground">—</span>;
-          return (
-            <span className="text-sm">
-              <span className="font-mono text-xs text-muted-foreground mr-1">{t.coaCode}</span>
-              {t.coaName}
-            </span>
-          );
-        },
-      },
-      {
-        accessorKey: "accountingDate",
-        header: "Accounting Date",
-        cell: ({ row }) => {
-          const v = row.getValue("accountingDate") as string | null | undefined;
-          if (!v) return <span className="text-muted-foreground">—</span>;
-          const [year, month] = v.slice(0, 10).split("-");
-          return (
-            <span className="tabular-nums text-sm text-muted-foreground">
-              {month}/{year}
-            </span>
-          );
-        },
-      },
-      {
-        accessorKey: "notes",
-        header: "Notes",
-        cell: ({ row }) => (
-          <span className="text-muted-foreground text-sm">{row.getValue("notes") ?? "—"}</span>
-        ),
-      },
-      {
-        id: "transfer",
-        header: "",
-        cell: ({ row }) => {
-          const t = row.original;
-          if (!TRANSFER_CODES.has(t.coaCode ?? "")) return null;
-          if (t.transferId) {
-            return (
-              <button
-                title="Linked transfer — click to unlink"
-                className="text-green-600 hover:text-green-700 transition-colors"
-                onClick={(e) => { e.stopPropagation(); setUnlinkDialog({ open: true, transaction: t }); }}
-              >
-                <Link2 className="h-3.5 w-3.5" />
-              </button>
-            );
-          }
-          return (
-            <button
-              title="Orphan transfer — click to link"
-              className="text-amber-500 hover:text-amber-600 transition-colors"
-              onClick={(e) => { e.stopPropagation(); setLinkDialog({ open: true, transaction: t }); }}
-            >
-              <Unlink2 className="h-3.5 w-3.5" />
-            </button>
-          );
-        },
-      },
-      {
-        id: "asset",
-        header: "",
-        cell: ({ row }) => {
-          const t = row.original;
-          if (!ASSET_COA_CODES.has(t.coaCode ?? "")) return null;
-          if (t.assetId) {
-            return (
-              <span title={t.assetName ?? "Asset linked"} className="text-green-600">
-                <Package className="h-3.5 w-3.5" />
-              </span>
-            );
-          }
-          return (
-            <button
-              title="Orphan asset — click to edit and link"
-              className="text-amber-500 hover:text-amber-600 transition-colors"
-              onClick={(e) => { e.stopPropagation(); openEdit(t); }}
-            >
-              <PackageOpen className="h-3.5 w-3.5" />
-            </button>
-          );
-        },
-      },
-      {
-        id: "actions",
-        cell: ({ row }) => (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={() => openEdit(row.original)}
-          >
-            <Pencil className="h-3.5 w-3.5" />
-          </Button>
-        ),
-      },
-    ],
-    [openEdit, flipSign, setLinkDialog, setUnlinkDialog, setLinkRecipientDialog]
+  // ── Pending (foreign-currency or uncategorized) for KPIs ──────────────────
+  const pendingCount = useMemo(
+    () => filtered.filter((t) => !t.coaCode).length,
+    [filtered]
   );
 
-  const table = useReactTable({
-    data: filtered,
-    columns,
-    getCoreRowModel: getCoreRowModel(),
-  });
-
-  const rows = table.getRowModel().rows;
-
   return (
-    <>
-      {loading ? (
-        <div className="space-y-3">
-          <div className="flex justify-end">
-            <Skeleton className="h-8 w-40" />
-          </div>
-          <div className="rounded-md border">
-            <div className="p-4 space-y-2">
-              {Array.from({ length: 8 }).map((_, i) => (
-                <Skeleton key={i} className="h-8 w-full" />
-              ))}
-            </div>
-          </div>
-        </div>
-      ) : (
-        <>
-          {/* ── Toolbar ─────────────────────────────────────────────────────── */}
-      <div className="flex items-center gap-2 flex-wrap">
-        {/* Recipient search */}
-        <div className="relative flex-1 min-w-[180px]">
-          <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-          <Input
-            placeholder="Search recipient…"
-            value={draftFilterRecipient}
-            onChange={(e) => setDraftFilterRecipient(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && applyFilters()}
-            className="pl-8 h-8 text-sm"
-          />
-          {draftFilterRecipient && (
-            <button
-              className="absolute right-2 top-2 text-muted-foreground hover:text-foreground"
-              onClick={() => setDraftFilterRecipient("")}
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          )}
-        </div>
+    <div className="flex h-full min-h-0 flex-col">
+      {/* ── Filter bar (terminal prompt) ─────────────────────────────────── */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-[color:var(--color-lm-border)] bg-[color:var(--color-lm-bg)] px-3.5 py-2 font-mono text-[11px]">
+        <span className="text-[color:var(--color-lm-gain)]">$</span>
+        <span className="text-[color:var(--color-lm-fg)]">filter</span>
 
-        {/* Account multi-select */}
         <MultiFilter
-          label="Account"
+          label="conta"
           options={accountOptions}
           selected={draftFilterAccounts}
           onToggle={toggleAccount}
           onClear={() => setDraftFilterAccounts([])}
         />
 
-        {/* COA multi-select */}
         <MultiFilter
-          label="COA"
+          label="coa"
           options={coaOptions}
           selected={draftFilterCoa}
           onToggle={toggleCoa}
           onClear={() => setDraftFilterCoa([])}
         />
 
-        {/* Transaction date range */}
         <DateRangeFilter
-          label="Tx Period"
+          label="período"
           from={draftTxFrom}
           to={draftTxTo}
           onFrom={setDraftTxFrom}
@@ -1034,107 +1086,107 @@ export function TransactionTable({ initialCoa, initialFrom, initialTo, initialAc
           onClear={() => { setDraftTxFrom(""); setDraftTxTo(""); }}
         />
 
-        {/* Accounting month */}
         <MonthFilter
-          label="Acc Month"
+          label="mês contábil"
           value={draftAccMonth}
           onChange={setDraftAccMonth}
           onClear={() => setDraftAccMonth("")}
         />
 
-        {/* Apply filters */}
-        <Button
-          variant={isDirty ? "default" : "outline"}
-          size="sm"
-          className="h-8 text-xs"
+        <div className="flex items-center">
+          <Input
+            placeholder="recipient…"
+            value={draftFilterRecipient}
+            onChange={(e) => setDraftFilterRecipient(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && applyFilters()}
+            className="h-7 w-44 border-[color:var(--color-lm-border-2)] bg-transparent font-mono text-[11px] text-[color:var(--color-lm-fg)] placeholder:text-[color:var(--color-lm-fg-dim)]"
+          />
+        </div>
+
+        <LmFilterButton
+          variant={isDirty ? "primary" : "default"}
+          active={!isDirty}
           onClick={applyFilters}
         >
-          Apply
-        </Button>
+          aplicar
+        </LmFilterButton>
 
-        {/* Uncategorized toggle */}
-        <Button
-          variant={filterUncategorized ? "secondary" : "outline"}
-          size="sm"
-          className="h-8 gap-1.5 text-xs font-normal"
+        <LmFilterButton
+          active={filterUncategorized}
           onClick={() => setFilterUncategorized((v) => !v)}
         >
-          Uncategorized
-          {uncategorizedCount > 0 && (
-            <span className="rounded-full bg-muted px-1.5 text-[10px] font-semibold text-muted-foreground leading-4">
-              {uncategorizedCount}
-            </span>
-          )}
-        </Button>
+          uncat {uncategorizedCount > 0 && `· ${uncategorizedCount}`}
+        </LmFilterButton>
 
-        {/* Suggest categories */}
         {uncategorizedCount > 0 && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 gap-1.5 text-xs font-normal"
+          <button
             onClick={() => setSuggestSheet(true)}
+            className="flex h-7 items-center gap-1.5 border border-[color:var(--color-lm-border-2)] px-2.5 font-mono text-[10px] uppercase tracking-[1px] text-[color:var(--color-lm-fg-muted)] hover:text-[color:var(--color-lm-fg)]"
           >
-            <Sparkles className="h-3 w-3" />
-            Suggest
-            <span className="rounded-full bg-muted px-1.5 text-[10px] font-semibold text-muted-foreground leading-4">
-              {uncategorizedCount}
-            </span>
-          </Button>
+            <Sparkles className="h-3 w-3" /> sugerir
+          </button>
         )}
 
-        {/* Orphan transfers toggle */}
-        <Button
-          variant={filterOrphans ? "secondary" : "outline"}
-          size="sm"
-          className="h-8 gap-1.5 text-xs font-normal"
+        <LmFilterButton
+          active={filterOrphans}
           onClick={() => setFilterOrphans((v) => !v)}
         >
-          <Unlink2 className="h-3 w-3" />
-          Orphan transfers
-          {orphanCount > 0 && (
-            <span className="rounded-full bg-amber-100 dark:bg-amber-900/40 px-1.5 text-[10px] font-semibold text-amber-700 dark:text-amber-400 leading-4">
-              {orphanCount}
-            </span>
-          )}
-        </Button>
+          <span className="inline-flex items-center gap-1">
+            <Unlink2 className="h-3 w-3" /> órfãos tx {orphanCount > 0 && `· ${orphanCount}`}
+          </span>
+        </LmFilterButton>
 
-        {/* Orphan assets toggle */}
-        <Button
-          variant={filterOrphanAssets ? "secondary" : "outline"}
-          size="sm"
-          className="h-8 gap-1.5 text-xs font-normal"
+        <LmFilterButton
+          active={filterOrphanAssets}
           onClick={() => setFilterOrphanAssets((v) => !v)}
         >
-          <PackageOpen className="h-3 w-3" />
-          Orphan assets
-          {orphanAssetCount > 0 && (
-            <span className="rounded-full bg-amber-100 dark:bg-amber-900/40 px-1.5 text-[10px] font-semibold text-amber-700 dark:text-amber-400 leading-4">
-              {orphanAssetCount}
-            </span>
-          )}
-        </Button>
-
-        {/* Clear all */}
-        {anyFilter && (
-          <Button variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground" onClick={clearAll}>
-            <X className="h-3 w-3 mr-1" />
-            Clear all
-          </Button>
-        )}
-
-        {/* Row count */}
-        {anyFilter && (
-          <span className="text-xs text-muted-foreground ml-auto">
-            {filtered.length} / {transactions.length}
+          <span className="inline-flex items-center gap-1">
+            <PackageOpen className="h-3 w-3" /> órfãos ativos {orphanAssetCount > 0 && `· ${orphanAssetCount}`}
           </span>
+        </LmFilterButton>
+
+        {anyFilter && (
+          <button
+            onClick={clearAll}
+            className="flex h-7 items-center gap-1 px-2.5 font-mono text-[10px] uppercase tracking-[1px] text-[color:var(--color-lm-fg-dim)] hover:text-[color:var(--color-lm-fg)]"
+          >
+            <X className="h-3 w-3" /> limpar
+          </button>
         )}
 
-        {/* New transaction */}
-        <Button variant="success" size="sm" onClick={openCreate} className={anyFilter ? "" : "ml-auto"}>
-          <Plus className="h-4 w-4 mr-1" />
-          New Transaction
-        </Button>
+        <span className="flex-1" />
+
+        <button className="h-7 border border-[color:var(--color-lm-border-2)] bg-transparent px-3 font-mono text-[10px] tracking-[1px] uppercase text-[color:var(--color-lm-fg-muted)] hover:text-[color:var(--color-lm-fg)]">
+          IMPORTAR
+        </button>
+        <button
+          onClick={openCreate}
+          className="h-7 bg-[color:var(--color-lm-fg)] px-3 font-mono text-[10px] tracking-[1px] uppercase text-[color:var(--color-lm-bg)]"
+        >
+          + NOVA
+        </button>
+      </div>
+
+      {/* ── KPI band ─────────────────────────────────────────────────────── */}
+      <div
+        className="grid border-b border-[color:var(--color-lm-border-2)]"
+        style={{ gridTemplateColumns: "repeat(5, 1fr)" }}
+      >
+        <LmKpi label="Entradas · período" value={totals.totalIn} />
+        <LmKpi label="Saídas · período"   value={Math.abs(totals.totalOut)} negative />
+        <LmKpi label="Líquido · período"  value={totals.net} negative={totals.net < 0} emphasis />
+        <LmKpi
+          label="Pendentes"
+          value={pendingCount}
+          currency={false}
+          sub={pendingCount === 1 ? "1 transação" : `${pendingCount} transações`}
+        />
+        <LmKpi
+          label="Transações"
+          value={filtered.length.toString()}
+          currency={false}
+          sub={`${transactions.length} no total`}
+        />
       </div>
 
       {/* ── Bulk edit bar ────────────────────────────────────────────────── */}
@@ -1149,90 +1201,128 @@ export function TransactionTable({ initialCoa, initialFrom, initialTo, initialAc
       )}
 
       {/* ── Table ────────────────────────────────────────────────────────── */}
-      <div className="rounded-md border overflow-auto max-h-[calc(100svh-16rem)]">
-        <Table>
-          <TableHeader className="sticky top-0 z-10 bg-background">
-            {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow key={headerGroup.id}>
-                <TableHead className="pr-0 w-10">
-                  <input
-                    type="checkbox"
-                    ref={headerCheckboxRef}
-                    onChange={(e) =>
-                      setSelectedIds(
-                        e.target.checked ? new Set(filtered.map((t) => t.id)) : new Set()
-                      )
-                    }
-                    className="h-4 w-4 cursor-pointer rounded border-border accent-primary"
-                  />
-                </TableHead>
-                {headerGroup.headers.map((header) => (
-                  <TableHead key={header.id}>
-                    {flexRender(header.column.columnDef.header, header.getContext())}
-                  </TableHead>
-                ))}
-              </TableRow>
+      <div className="min-h-0 flex-1 overflow-auto">
+        {loading ? (
+          <div className="space-y-1 p-3.5">
+            {Array.from({ length: 12 }).map((_, i) => (
+              <div
+                key={i}
+                className="h-6 animate-pulse bg-[rgba(255,255,255,0.02)]"
+              />
             ))}
-          </TableHeader>
-          <TableBody>
-            {rows.length ? (
-              rows.map((row) => (
-                <MemoRow
-                  key={row.id}
-                  row={row}
-                  isSelected={selectedIds.has(row.original.id)}
-                  onToggle={toggleRow}
+          </div>
+        ) : (
+          <>
+            <div
+              className="sticky top-0 z-10 grid items-center border-b border-[color:var(--color-lm-border-2)] bg-[color:var(--color-lm-surface)] px-3.5 py-1.5 text-[9px] uppercase tracking-[1.2px] text-[color:var(--color-lm-fg-dim)]"
+              style={{ gridTemplateColumns: ROW_TEMPLATE, gap: 8 }}
+            >
+              <div>
+                <input
+                  type="checkbox"
+                  ref={headerCheckboxRef}
+                  onChange={(e) =>
+                    setSelectedIds(e.target.checked ? new Set(filtered.map((t) => t.id)) : new Set())
+                  }
+                  className="h-3.5 w-3.5 cursor-pointer border-[color:var(--color-lm-border-2)] accent-[color:var(--color-lm-fg)]"
                 />
-              ))
+              </div>
+              <div>Data</div>
+              <div>Recipient</div>
+              <div>Descrição</div>
+              <div>Conta</div>
+              <div>Categoria · COA</div>
+              <div className="text-right">CCY</div>
+              <div className="text-right">Débito</div>
+              <div className="text-right">Crédito</div>
+              <div className="text-center">Link</div>
+              <div className="text-right">Stat</div>
+              <div />
+            </div>
+
+            {filtered.length ? (
+              filtered.map((t, i) => {
+                const prev = i > 0 ? filtered[i - 1] : null;
+                const isNewDay = !prev || toISO(prev.transactionDate) !== toISO(t.transactionDate);
+                return (
+                  <TxRow
+                    key={t.id}
+                    row={t}
+                    isSelected={selectedIds.has(t.id)}
+                    isNewDay={isNewDay}
+                    stripe={i % 2 === 1}
+                    onToggle={toggleRow}
+                    onEdit={openEdit}
+                    onFlipSign={flipSign}
+                    onLink={openLinkDialog}
+                    onUnlink={openUnlinkDialog}
+                    onLinkRecipient={openLinkRecipient}
+                  />
+                );
+              })
             ) : (
-              <TableRow>
-                <TableCell
-                  colSpan={columns.length + 1}
-                  className="h-24 text-center text-muted-foreground"
-                >
-                  {anyFilter ? "No transactions match the current filters." : "No transactions yet. Add one to get started."}
-                </TableCell>
-              </TableRow>
+              <div className="flex h-32 items-center justify-center text-[11px] text-[color:var(--color-lm-fg-muted)]">
+                {anyFilter
+                  ? "nenhuma transação corresponde aos filtros atuais."
+                  : "nenhuma transação ainda. adicione uma para começar."}
+              </div>
             )}
-          </TableBody>
-        </Table>
+          </>
+        )}
       </div>
 
-      {/* ── Totals ───────────────────────────────────────────────────────── */}
-      {filtered.length > 0 && (
-        <div className="flex items-center gap-6 px-3 py-2 text-sm tabular-nums">
-          <span className="text-muted-foreground">
-            In{" "}
-            <span className="font-medium text-green-700 dark:text-green-400">
-              {totals.totalIn.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-            </span>
+      {/* ── Status bar ────────────────────────────────────────────────────── */}
+      <div className="flex items-center gap-5 border-t border-[color:var(--color-lm-border-2)] bg-[color:var(--color-lm-bg)] px-3.5 py-1.5 font-mono text-[10px] tracking-[0.5px] text-[color:var(--color-lm-fg-dim)]">
+        <span>
+          <span className="text-[color:var(--color-lm-fg-muted)]">row</span>{" "}
+          {filtered.length}/{transactions.length}
+        </span>
+        <span className="flex-1" />
+        <span>
+          Σ débito{" "}
+          <span className="text-[color:var(--color-lm-loss)]">
+            R$ {fmtBRL(Math.abs(totals.totalOut))}
           </span>
-          <span className="text-muted-foreground">
-            Out{" "}
-            <span className="font-medium text-red-600 dark:text-red-400">
-              {totals.totalOut.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-            </span>
+        </span>
+        <span>
+          Σ crédito{" "}
+          <span className="text-[color:var(--color-lm-gain)]">
+            R$ {fmtBRL(totals.totalIn)}
           </span>
-          <span className="text-muted-foreground">
-            Net{" "}
-            <span className={`font-medium ${totals.net >= 0 ? "text-green-700 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
-              {totals.net.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-            </span>
+        </span>
+        <span>
+          net{" "}
+          <span className="text-[color:var(--color-lm-fg)]">
+            {totals.net >= 0 ? "+" : "−"}R$ {fmtBRL(Math.abs(totals.net))}
           </span>
-        </div>
-      )}
-        </>
-      )}
+        </span>
+      </div>
 
-      {/* ── Sheet ────────────────────────────────────────────────────────── */}
+      {/* ── Sheet (drawer) ────────────────────────────────────────────────── */}
       <Sheet open={sheet.open} onOpenChange={(open) => setSheet((s) => ({ ...s, open }))}>
-        <SheetContent>
-          <SheetHeader>
-            <SheetTitle>
-              {sheet.mode === "create" ? "New Transaction" : "Edit Transaction"}
-            </SheetTitle>
+        <SheetContent
+          showCloseButton={false}
+          className="!w-[440px] !max-w-[440px] border-l border-[color:var(--color-lm-border-2)] bg-[color:var(--color-lm-bg)] p-0 font-mono text-[11px] text-[color:var(--color-lm-fg)]"
+        >
+          <SheetHeader className="flex-row items-baseline gap-2.5 border-b border-[color:var(--color-lm-border-2)] px-5 py-3.5">
+            <span className="text-[color:var(--color-lm-gain)]">■</span>
+            <div className="flex-1">
+              <SheetTitle className="font-mono text-[14px] font-normal tracking-[-0.2px] text-[color:var(--color-lm-fg)]">
+                {sheet.mode === "create" ? "Nova transação" : "Editar transação"}
+              </SheetTitle>
+              <div className="mt-0.5 text-[10px] text-[color:var(--color-lm-fg-dim)]">
+                {sheet.mode === "create" ? "preencha os campos · Tab avança" : "ajuste e salve"}
+              </div>
+            </div>
+            <button
+              onClick={() => setSheet((s) => ({ ...s, open: false }))}
+              className="text-[10px] text-[color:var(--color-lm-fg-dim)]"
+              title="Fechar (Esc)"
+            >
+              ESC
+            </button>
           </SheetHeader>
-          <div className="flex-1 overflow-y-auto px-4 pb-6">
+          <div className="flex-1 overflow-y-auto px-5 py-4">
             <TransactionForm
               key={sheet.mode === "edit" ? sheet.transaction?.id : "create"}
               transaction={sheet.transaction}
@@ -1245,7 +1335,7 @@ export function TransactionTable({ initialCoa, initialFrom, initialTo, initialAc
         </SheetContent>
       </Sheet>
 
-      {/* ── Link transfer dialog ──────────────────────────────────────────── */}
+      {/* ── Dialogs ──────────────────────────────────────────────────────── */}
       {linkDialog.transaction && (
         <LinkTransferDialog
           open={linkDialog.open}
@@ -1272,7 +1362,6 @@ export function TransactionTable({ initialCoa, initialFrom, initialTo, initialAc
         />
       )}
 
-      {/* ── Link recipient dialog ─────────────────────────────────────────── */}
       {linkRecipientDialog.transaction && (
         <LinkRecipientDialog
           open={linkRecipientDialog.open}
@@ -1291,7 +1380,6 @@ export function TransactionTable({ initialCoa, initialFrom, initialTo, initialAc
         />
       )}
 
-      {/* ── Suggest categories sheet ─────────────────────────────────────── */}
       <SuggestCategoriesSheet
         open={suggestSheet}
         onOpenChange={setSuggestSheet}
@@ -1300,7 +1388,6 @@ export function TransactionTable({ initialCoa, initialFrom, initialTo, initialAc
         onApplied={fetchTransactions}
       />
 
-      {/* ── Unlink transfer dialog ────────────────────────────────────────── */}
       {unlinkDialog.transaction && (
         <UnlinkTransferDialog
           open={unlinkDialog.open}
@@ -1319,6 +1406,7 @@ export function TransactionTable({ initialCoa, initialFrom, initialTo, initialAc
           }}
         />
       )}
-    </>
+    </div>
   );
 }
+

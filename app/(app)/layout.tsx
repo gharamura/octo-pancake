@@ -1,6 +1,6 @@
 import { auth } from "@/auth";
 import { AppSidebar } from "@/components/app-sidebar";
-import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import { AppBreadcrumb } from "@/components/app-breadcrumb";
 import { redirect } from "next/navigation";
 
 export default async function AppLayout({
@@ -15,14 +15,12 @@ export default async function AppLayout({
   }
 
   return (
-    <SidebarProvider>
+    <div className="flex h-screen w-screen overflow-hidden bg-[color:var(--color-lm-bg)] text-[color:var(--color-lm-fg)] lm-scanlines">
       <AppSidebar user={session.user} />
-      <SidebarInset>
-        <header className="flex h-14 items-center gap-2 border-b px-4">
-          <SidebarTrigger />
-        </header>
-        <main className="flex-1 p-6">{children}</main>
-      </SidebarInset>
-    </SidebarProvider>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <AppBreadcrumb />
+        <main className="flex-1 overflow-auto">{children}</main>
+      </div>
+    </div>
   );
 }
