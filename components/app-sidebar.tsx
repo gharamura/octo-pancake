@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/sidebar";
 import { ArrowLeftRight, BarChart2, BookOpen, Building2, ChevronRight, Home, LineChart, LogOut, TrendingUp, Upload, UserX, Wallet, RefreshCw } from "lucide-react";
 import { signOut } from "next-auth/react";
+import Image from "next/image";
 import Link from "next/link";
 
 interface AppSidebarProps {
@@ -44,7 +45,10 @@ export function AppSidebar({ user }: AppSidebarProps) {
   return (
     <Sidebar>
       <SidebarHeader className="p-4">
-        <span className="text-lg font-bold tracking-tight">My App</span>
+        <Link href="/dashboard" className="flex items-center gap-3">
+          <Image src="/logo.png" alt="CH Personal Finance" width={36} height={36} className="rounded-md" />
+          <span className="text-sm font-bold leading-tight tracking-tight">CH Personal<br />Finance</span>
+        </Link>
       </SidebarHeader>
 
       <SidebarContent className="p-2">

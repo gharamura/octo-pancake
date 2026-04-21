@@ -18,7 +18,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ChevronDown, ListFilter } from "lucide-react";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import { ChevronDown, ListFilter, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AssetBalanceReportRow } from "@/app/api/balances/assets/route";
 
@@ -102,24 +108,66 @@ function brlEquiv(asset: AssetBalanceReportRow, key: string): number | null {
 // ---------------------------------------------------------------------------
 
 const TD_STICKY =
-  "sticky left-0 z-10 whitespace-nowrap px-3 py-2 bg-background";
+  "sticky left-0 z-10 whitespace-nowrap px-3 py-1.5 bg-background";
 const TH_STICKY =
   "sticky left-0 top-0 z-30 whitespace-nowrap px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide bg-muted/40";
 const TD_NUM =
-  "px-3 py-2 text-right tabular-nums text-sm";
+  "px-3 py-1.5 text-right tabular-nums text-sm";
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
+function fmtLabel(raw: string): string {
+  return raw.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function assetGroupKey(a: AssetBalanceReportRow): string {
+  return [a.name, a.currency, a.assetClass ?? "", a.index ?? "", a.liquidity ?? "", a.expirationDate ?? ""].join("|");
+}
+
+type MergedRow = AssetBalanceReportRow & { _allAssetIds: string[] };
+
+function mergeAssetGroup(rows: AssetBalanceReportRow[]): MergedRow {
+  const first  = rows[0];
+  const merged: MergedRow = {
+    ...first,
+    accountName: rows.length > 1
+      ? `${first.accountName ?? first.accountId} +${rows.length - 1}`
+      : first.accountName,
+    months:        {},
+    exchangeRates: {},
+    _allAssetIds:  rows.map((r) => r.assetId),
+  };
+  for (const row of rows) {
+    for (const [k, v] of Object.entries(row.months)) {
+      merged.months[k] = (merged.months[k] ?? 0) + v;
+    }
+    for (const [k, v] of Object.entries(row.exchangeRates)) {
+      if (merged.exchangeRates[k] == null && v != null) merged.exchangeRates[k] = v;
+    }
+  }
+  return merged;
+}
+
 export function AssetBalanceReport() {
-  const [preset,           setPreset]           = useState<Preset>("6");
-  const [customFrom,       setCustomFrom]       = useState(monthsAgo(6));
-  const [customTo,         setCustomTo]         = useState(currentMonth());
-  const [assets,           setAssets]           = useState<AssetBalanceReportRow[]>([]);
-  const [loading,          setLoading]          = useState(true);
-  const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
-  const [sort,             setSort]             = useState<"name-asc" | "name-desc" | "value-desc" | "value-asc">("name-asc");
+  type BalanceEntry = { id: string; date: string; balance: string; notes: string | null };
+  type SelectedCell = { assetIds: string[]; month: string; assetName: string };
+
+  const [preset,            setPreset]            = useState<Preset>("6");
+  const [customFrom,        setCustomFrom]        = useState(monthsAgo(6));
+  const [customTo,          setCustomTo]          = useState(currentMonth());
+  const [assets,            setAssets]            = useState<AssetBalanceReportRow[]>([]);
+  const [loading,           setLoading]           = useState(true);
+  const [selectedAccounts,  setSelectedAccounts]  = useState<string[]>([]);
+  const [selectedClasses,   setSelectedClasses]   = useState<string[]>([]);
+  const [selectedAssetIds,  setSelectedAssetIds]  = useState<string[]>([]);
+  const [sort,              setSort]              = useState<"name-asc" | "name-desc" | "value-desc" | "value-asc">("name-asc");
+  const [selectedCell,      setSelectedCell]      = useState<SelectedCell | null>(null);
+  const [entries,           setEntries]           = useState<BalanceEntry[]>([]);
+  const [entriesLoading,    setEntriesLoading]    = useState(false);
+  const [editDrafts,        setEditDrafts]        = useState<Record<string, { date: string; balance: string }>>({});
+  const [saving,            setSaving]            = useState<string | null>(null);
 
   const periodFrom = preset === "custom" ? customFrom : monthsAgo(Number(preset));
   const periodTo   = preset === "custom" ? customTo   : currentMonth();
@@ -135,7 +183,7 @@ export function AssetBalanceReport() {
       .catch(() => setLoading(false));
   }, [periodFrom, periodTo]);
 
-  // Unique accounts for filter options
+  // Filter options derived from data
   const accountOptions = useMemo(() => {
     const seen = new Map<string, string>();
     assets.forEach((a) => {
@@ -146,16 +194,39 @@ export function AssetBalanceReport() {
       .map(([id, name]) => ({ id, name }));
   }, [assets]);
 
-  const toggleAccount = useCallback((id: string) =>
-    setSelectedAccounts((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]), []);
-
-  // Client-side account filter
-  const filteredAssets = useMemo(() =>
-    selectedAccounts.length === 0
-      ? assets
-      : assets.filter((a) => selectedAccounts.includes(a.accountId)),
-    [assets, selectedAccounts]
+  const classOptions = useMemo(() =>
+    Array.from(new Set(assets.map((a) => a.assetClass).filter(Boolean) as string[])).sort(),
+    [assets]
   );
+
+  const toggleAccount  = useCallback((id: string) =>
+    setSelectedAccounts((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]), []);
+  const toggleClass    = useCallback((cls: string) =>
+    setSelectedClasses((prev) => prev.includes(cls) ? prev.filter((x) => x !== cls) : [...prev, cls]), []);
+  const toggleAssetId  = useCallback((id: string) =>
+    setSelectedAssetIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]), []);
+
+  const hasActiveFilters = selectedAccounts.length > 0 || selectedClasses.length > 0 || selectedAssetIds.length > 0;
+
+  // Client-side filtering (AND logic across filter types)
+  const filteredAssets = useMemo(() => {
+    let result = assets;
+    if (selectedAccounts.length > 0) result = result.filter((a) => selectedAccounts.includes(a.accountId));
+    if (selectedClasses.length  > 0) result = result.filter((a) => a.assetClass != null && selectedClasses.includes(a.assetClass));
+    if (selectedAssetIds.length > 0) result = result.filter((a) => selectedAssetIds.includes(a.assetId));
+    return result;
+  }, [assets, selectedAccounts, selectedClasses, selectedAssetIds]);
+
+  // Group assets that share same name/currency/class/index/liquidity — differ only by account
+  const groupedAssets = useMemo((): MergedRow[] => {
+    const map = new Map<string, AssetBalanceReportRow[]>();
+    for (const row of filteredAssets) {
+      const key = assetGroupKey(row);
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(row);
+    }
+    return Array.from(map.values()).map(mergeAssetGroup);
+  }, [filteredAssets]);
 
   // All month keys in the requested range
   const allMonthKeys = useMemo(() => monthKeysBetween(periodFrom, periodTo), [periodFrom, periodTo]);
@@ -163,9 +234,9 @@ export function AssetBalanceReport() {
   // Which month keys actually have data
   const activeMonths = useMemo(() => {
     const set = new Set<string>();
-    filteredAssets.forEach((a) => Object.keys(a.months).forEach((k) => set.add(k)));
+    groupedAssets.forEach((a) => Object.keys(a.months).forEach((k) => set.add(k)));
     return allMonthKeys.filter((k) => set.has(k));
-  }, [filteredAssets, allMonthKeys]);
+  }, [groupedAssets, allMonthKeys]);
 
   // Does the range span multiple years? If so, show year in column headers
   const multiYear = useMemo(() => {
@@ -175,23 +246,23 @@ export function AssetBalanceReport() {
   }, [activeMonths]);
 
   // Per-month totals grouped by currency
-  const currencies = useMemo(() => Array.from(new Set(filteredAssets.map((a) => a.currency))), [filteredAssets]);
+  const currencies = useMemo(() => Array.from(new Set(groupedAssets.map((a) => a.currency))), [groupedAssets]);
 
   const monthTotals = useMemo(() => {
     const map: Record<string, Record<string, number>> = {};
-    for (const asset of filteredAssets) {
+    for (const asset of groupedAssets) {
       for (const [key, val] of Object.entries(asset.months)) {
         if (!map[key]) map[key] = {};
         map[key][asset.currency] = (map[key][asset.currency] ?? 0) + val;
       }
     }
     return map;
-  }, [filteredAssets]);
+  }, [groupedAssets]);
 
   const latestMonth = activeMonths[activeMonths.length - 1] ?? null;
 
   const sortedAssets = useMemo(() => {
-    return [...filteredAssets].sort((a, b) => {
+    return [...groupedAssets].sort((a, b) => {
       if (sort === "name-asc")  return a.name.localeCompare(b.name);
       if (sort === "name-desc") return b.name.localeCompare(a.name);
       const av = latestMonth != null ? (a.months[latestMonth] ?? null) : null;
@@ -204,8 +275,8 @@ export function AssetBalanceReport() {
   }, [filteredAssets, sort, latestMonth]);
 
   const hasNonBrl = useMemo(
-    () => filteredAssets.some((a) => a.currency !== "BRL"),
-    [filteredAssets]
+    () => groupedAssets.some((a) => a.currency !== "BRL"),
+    [groupedAssets]
   );
 
   // BRL total per month
@@ -215,7 +286,7 @@ export function AssetBalanceReport() {
       let sum = 0;
       let hasAny = false;
       let partial = false;
-      for (const asset of filteredAssets) {
+      for (const asset of groupedAssets) {
         if (asset.months[key] == null) continue;
         const equiv = brlEquiv(asset, key);
         if (equiv !== null) { sum += equiv; hasAny = true; }
@@ -225,6 +296,61 @@ export function AssetBalanceReport() {
     }
     return map;
   }, [filteredAssets, activeMonths]);
+
+  // -------------------------------------------------------------------------
+  // Entry sheet actions
+  // -------------------------------------------------------------------------
+
+  const openCell = useCallback((cell: SelectedCell) => {
+    setSelectedCell(cell);
+    setEntries([]);
+    setEditDrafts({});
+    setEntriesLoading(true);
+    fetch(`/api/balances/assets/entries?assetIds=${cell.assetIds.join(",")}&month=${cell.month}`)
+      .then((r) => r.json())
+      .then(({ entries: data }: { entries: BalanceEntry[] }) => {
+        setEntries(data);
+        const drafts: Record<string, { date: string; balance: string }> = {};
+        for (const e of data) {
+          drafts[e.id] = {
+            date:    typeof e.date === "string" ? e.date.split("T")[0] : String(e.date),
+            balance: e.balance,
+          };
+        }
+        setEditDrafts(drafts);
+        setEntriesLoading(false);
+      })
+      .catch(() => setEntriesLoading(false));
+  }, []);
+
+  const saveEntry = useCallback(async (id: string) => {
+    const draft = editDrafts[id];
+    if (!draft) return;
+    setSaving(id);
+    await fetch(`/api/balances/assets/entries/${id}`, {
+      method:  "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ date: draft.date, balance: draft.balance }),
+    });
+    setSaving(null);
+    // refresh report
+    setLoading(true);
+    fetch(`/api/balances/assets?from=${periodFrom}&to=${periodTo}`)
+      .then((r) => r.json())
+      .then(({ assets: data }: { assets: AssetBalanceReportRow[] }) => { setAssets(data); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, [editDrafts, periodFrom, periodTo]);
+
+  const deleteEntry = useCallback(async (id: string) => {
+    await fetch(`/api/balances/assets/entries/${id}`, { method: "DELETE" });
+    setEntries((prev) => prev.filter((e) => e.id !== id));
+    setEditDrafts((prev) => { const n = { ...prev }; delete n[id]; return n; });
+    setLoading(true);
+    fetch(`/api/balances/assets?from=${periodFrom}&to=${periodTo}`)
+      .then((r) => r.json())
+      .then(({ assets: data }: { assets: AssetBalanceReportRow[] }) => { setAssets(data); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, [periodFrom, periodTo]);
 
   return (
     <div className="space-y-4">
@@ -306,16 +432,101 @@ export function AssetBalanceReport() {
               {selectedAccounts.length > 0 && (
                 <>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    className="justify-center text-xs text-muted-foreground"
-                    onSelect={() => setSelectedAccounts([])}
-                  >
+                  <DropdownMenuItem className="justify-center text-xs text-muted-foreground" onSelect={() => setSelectedAccounts([])}>
                     Clear filter
                   </DropdownMenuItem>
                 </>
               )}
             </DropdownMenuContent>
           </DropdownMenu>
+        )}
+
+        {classOptions.length > 0 && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="h-9 gap-1.5 text-sm font-normal">
+                {selectedClasses.length > 0
+                  ? <ListFilter className="h-3.5 w-3.5 text-primary" />
+                  : <ChevronDown className="h-3.5 w-3.5 opacity-50" />}
+                Class
+                {selectedClasses.length > 0 && (
+                  <span className="rounded-full bg-primary/10 px-1.5 text-[10px] font-semibold text-primary leading-4">
+                    {selectedClasses.length}
+                  </span>
+                )}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="min-w-[220px] max-h-72 overflow-y-auto">
+              {classOptions.map((cls) => (
+                <DropdownMenuCheckboxItem
+                  key={cls}
+                  checked={selectedClasses.includes(cls)}
+                  onCheckedChange={() => toggleClass(cls)}
+                  onSelect={(e) => e.preventDefault()}
+                >
+                  {fmtLabel(cls)}
+                </DropdownMenuCheckboxItem>
+              ))}
+              {selectedClasses.length > 0 && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem className="justify-center text-xs text-muted-foreground" onSelect={() => setSelectedClasses([])}>
+                    Clear filter
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+
+        {assets.length > 0 && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="h-9 gap-1.5 text-sm font-normal">
+                {selectedAssetIds.length > 0
+                  ? <ListFilter className="h-3.5 w-3.5 text-primary" />
+                  : <ChevronDown className="h-3.5 w-3.5 opacity-50" />}
+                Assets
+                {selectedAssetIds.length > 0 && (
+                  <span className="rounded-full bg-primary/10 px-1.5 text-[10px] font-semibold text-primary leading-4">
+                    {selectedAssetIds.length}
+                  </span>
+                )}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="min-w-[240px] max-h-72 overflow-y-auto">
+              {[...assets].sort((a, b) => a.name.localeCompare(b.name)).map((a) => (
+                <DropdownMenuCheckboxItem
+                  key={a.assetId}
+                  checked={selectedAssetIds.includes(a.assetId)}
+                  onCheckedChange={() => toggleAssetId(a.assetId)}
+                  onSelect={(e) => e.preventDefault()}
+                >
+                  <span className="flex-1 truncate">{a.name}</span>
+                  <span className="ml-2 text-[10px] text-muted-foreground font-mono">{a.currency}</span>
+                </DropdownMenuCheckboxItem>
+              ))}
+              {selectedAssetIds.length > 0 && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem className="justify-center text-xs text-muted-foreground" onSelect={() => setSelectedAssetIds([])}>
+                    Clear filter (show all)
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+
+        {hasActiveFilters && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-9 text-xs text-muted-foreground"
+            onClick={() => { setSelectedAccounts([]); setSelectedClasses([]); setSelectedAssetIds([]); }}
+          >
+            Clear all
+          </Button>
         )}
       </div>
 
@@ -327,7 +538,7 @@ export function AssetBalanceReport() {
             <Skeleton key={i} className="h-10 w-full" />
           ))}
         </div>
-      ) : assets.length === 0 ? (
+      ) : groupedAssets.length === 0 ? (
         <p className="py-12 text-center text-muted-foreground text-sm">
           No asset balances recorded for this period.
         </p>
@@ -360,10 +571,10 @@ export function AssetBalanceReport() {
                   className="border-b last:border-0 hover:bg-muted/20 transition-colors"
                 >
                   <td className={TD_STICKY}>
-                    <div className="flex flex-col">
-                      <span className="text-sm font-medium">{asset.name}</span>
-                      <span className="text-xs text-muted-foreground">{asset.currency}</span>
-                    </div>
+                    <span className="text-sm font-medium leading-none">
+                      {asset.name}
+                      <span className="text-xs text-muted-foreground font-normal"> ({asset.currency})</span>
+                    </span>
                   </td>
                   <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">
                     {asset.assetClass ? asset.assetClass.replace(/_/g, " ") : "—"}
@@ -374,20 +585,22 @@ export function AssetBalanceReport() {
                   {activeMonths.map((key) => {
                     const val = mv(asset, key);
                     const brl = asset.currency !== "BRL" ? brlEquiv(asset, key) : null;
+                    const clickable = val !== null;
                     return (
                       <td
                         key={key}
-                        className={`${TD_NUM} ${val === null ? "text-muted-foreground/40" : "text-foreground"}`}
+                        className={`${TD_NUM} ${val === null ? "text-muted-foreground/40" : "text-foreground"} ${clickable ? "cursor-pointer hover:bg-primary/5 hover:text-primary transition-colors" : ""}`}
+                        onClick={clickable ? () => openCell({ assetIds: asset._allAssetIds, month: key, assetName: asset.name }) : undefined}
                       >
                         {val === null ? "—" : (
-                          <div className="flex flex-col items-end gap-0.5">
-                            <span>{fmt(val, asset.currency)}</span>
+                          <span className="leading-none">
+                            {fmt(val, asset.currency)}
                             {brl !== null && (
                               <span className="text-[10px] text-muted-foreground tabular-nums">
-                                {fmt(brl, "BRL")}
+                                {" "}({fmt(brl, "BRL")})
                               </span>
                             )}
-                          </div>
+                          </span>
                         )}
                       </td>
                     );
@@ -454,6 +667,81 @@ export function AssetBalanceReport() {
           </table>
         </div>
       )}
+
+      {/* Entry edit sheet */}
+      <Sheet open={selectedCell !== null} onOpenChange={(v) => { if (!v) setSelectedCell(null); }}>
+        <SheetContent className="w-full sm:max-w-md flex flex-col">
+          <SheetHeader>
+            <SheetTitle className="text-base">
+              {selectedCell?.assetName}
+              <span className="ml-2 text-sm font-normal text-muted-foreground">
+                {selectedCell ? formatMonthKey(selectedCell.month, true) : ""}
+              </span>
+            </SheetTitle>
+          </SheetHeader>
+
+          <div className="flex-1 overflow-y-auto mt-4 space-y-3">
+            {entriesLoading ? (
+              <div className="space-y-2">
+                {[1, 2].map((i) => <Skeleton key={i} className="h-16 w-full" />)}
+              </div>
+            ) : entries.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8">No entries found.</p>
+            ) : (
+              entries.map((entry) => {
+                const draft = editDrafts[entry.id] ?? { date: "", balance: "" };
+                const isDirty = draft.date !== (typeof entry.date === "string" ? entry.date.split("T")[0] : String(entry.date))
+                             || draft.balance !== entry.balance;
+                return (
+                  <div key={entry.id} className="rounded-lg border p-3 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 space-y-1">
+                        <label className="text-xs text-muted-foreground">Date</label>
+                        <Input
+                          type="date"
+                          value={draft.date}
+                          onChange={(e) => setEditDrafts((p) => ({ ...p, [entry.id]: { ...draft, date: e.target.value } }))}
+                          className="h-8 text-sm"
+                        />
+                      </div>
+                      <div className="flex-1 space-y-1">
+                        <label className="text-xs text-muted-foreground">Balance</label>
+                        <Input
+                          type="number"
+                          value={draft.balance}
+                          onChange={(e) => setEditDrafts((p) => ({ ...p, [entry.id]: { ...draft, balance: e.target.value } }))}
+                          className="h-8 text-sm"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between pt-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-xs text-destructive hover:text-destructive"
+                        onClick={() => deleteEntry(entry.id)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5 mr-1" />
+                        Delete
+                      </Button>
+                      {isDirty && (
+                        <Button
+                          size="sm"
+                          className="h-7 text-xs"
+                          disabled={saving === entry.id}
+                          onClick={() => saveEntry(entry.id)}
+                        >
+                          {saving === entry.id ? "Saving…" : "Save"}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

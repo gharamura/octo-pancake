@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/sheet";
 import type { TransactionRow } from "@/components/transaction-form";
 import type { RecipientDetail } from "@/lib/repositories/recipient.repository";
-import { Check, ChevronsUpDown, Unlink } from "lucide-react";
+import { Check, ChevronsUpDown, Plus, Unlink } from "lucide-react";
 import { useMemo, useState } from "react";
 
 // ---------------------------------------------------------------------------
@@ -71,6 +71,8 @@ export function LinkRecipientDialog({
   const [linking,   setLinking]   = useState<string | null>(null);
   const [unlinking, setUnlinking] = useState(false);
   const [pickOpen,  setPickOpen]  = useState(false);
+  const [search,    setSearch]    = useState("");
+  const [creating,  setCreating]  = useState(false);
 
   const rawLabel = transaction.recipient ?? "";
   const coaCode  = transaction.coaCode;
@@ -100,6 +102,21 @@ export function LinkRecipientDialog({
       onOpenChange(false);
     } finally {
       setLinking(null);
+    }
+  }
+
+  async function createAndLink(name: string) {
+    setCreating(true);
+    try {
+      const res = await fetch("/api/recipients", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ name }),
+      });
+      const recipient = await res.json();
+      await link(recipient.id, recipient.name);
+    } finally {
+      setCreating(false);
     }
   }
 
@@ -218,7 +235,11 @@ export function LinkRecipientDialog({
               </PopoverTrigger>
               <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
                 <Command>
-                  <CommandInput placeholder="Search by name…" />
+                  <CommandInput
+                    placeholder="Search by name…"
+                    value={search}
+                    onValueChange={setSearch}
+                  />
                   <CommandList>
                     <CommandEmpty>No recipient found.</CommandEmpty>
                     <CommandGroup>
@@ -240,6 +261,21 @@ export function LinkRecipientDialog({
                         </CommandItem>
                       ))}
                     </CommandGroup>
+                    {search.trim() && (
+                      <CommandGroup>
+                        <CommandItem
+                          value={`__create__${search.trim()}`}
+                          onSelect={() => {
+                            setPickOpen(false);
+                            createAndLink(search.trim());
+                          }}
+                          disabled={creating}
+                        >
+                          <Plus className="mr-2 h-4 w-4" />
+                          {creating ? "Creating…" : `Create "${search.trim()}"`}
+                        </CommandItem>
+                      </CommandGroup>
+                    )}
                   </CommandList>
                 </Command>
               </PopoverContent>

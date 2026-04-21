@@ -9,7 +9,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { AccountType } from "@/lib/db/schema";
-import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronRight, TrendingDown, TrendingUp } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
@@ -42,6 +42,7 @@ interface CoaReportRow {
   parentCode: string | null;
   months:     Record<number, number>;
   total:      number;
+  isParent:   boolean;
 }
 
 type SortKey = "code" | "total" | number; // number = month (1–12)
@@ -56,11 +57,31 @@ function fmt(val: number): string {
   return val.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
 
-function valColor(val: number): string {
-  if (val === 0) return "text-muted-foreground";
-  return val > 0
-    ? "text-green-700 dark:text-green-400"
-    : "text-red-600 dark:text-red-400";
+function zeroColor(val: number): string {
+  return val === 0 ? "text-muted-foreground" : "";
+}
+
+// Returns "up" (expense grew >5%), "down" (expense shrank >5%), or null.
+// Expense values are negative; "grew" means curr is more negative than prev.
+function expenseTrend(curr: number, prev: number): "up" | "down" | null {
+  if (prev === 0 || curr === 0) return null;
+  const pct = (curr - prev) / Math.abs(prev);
+  if (pct < -0.05) return "up";   // more spending
+  if (pct >  0.05) return "down"; // less spending
+  return null;
+}
+
+function trendCellColor(trend: "up" | "down" | null): string {
+  if (trend === "up")   return "text-red-600 dark:text-red-400";
+  if (trend === "down") return "text-green-700 dark:text-green-400";
+  return "";
+}
+
+function ExpenseTrendIcon({ trend }: { trend: "up" | "down" | null }) {
+  if (!trend) return null;
+  if (trend === "up")
+    return <TrendingUp   className="ml-1 inline h-3 w-3" />;
+  return       <TrendingDown className="ml-1 inline h-3 w-3" />;
 }
 
 function mv(row: CoaReportRow, m: number): number {
@@ -116,37 +137,62 @@ function AccountRow({
   row,
   bg,
   year,
+  isExpense,
+  isChild,
+  collapsed,
   onNavigate,
+  onToggle,
 }: {
-  row: CoaReportRow;
-  bg: string;
-  year: number;
+  row:        CoaReportRow;
+  bg:         string;
+  year:       number;
+  isExpense:  boolean;
+  isChild?:   boolean;
+  collapsed?: boolean;
   onNavigate: (url: string) => void;
+  onToggle?:  () => void;
 }) {
   return (
-    <tr className={`border-b transition-colors hover:brightness-95 ${bg}`}>
+    <tr
+      className={`border-b transition-colors hover:brightness-95 ${bg} ${row.isParent ? "font-semibold" : ""}`}
+    >
       <td className={`${TD_STICKY} ${bg}`}>
+        {row.isParent ? (
+          <button
+            onClick={onToggle}
+            className="mr-1 inline-flex items-center text-muted-foreground hover:text-foreground"
+          >
+            {collapsed
+              ? <ChevronRight className="h-3.5 w-3.5" />
+              : <ChevronDown  className="h-3.5 w-3.5" />}
+          </button>
+        ) : (
+          <span className="ml-5 inline-block" />
+        )}
         <span className="font-mono text-xs text-muted-foreground mr-2">{row.code}</span>
-        <span className="text-sm font-medium">{row.name}</span>
+        <span className={`text-sm ${row.isParent ? "font-semibold" : "font-medium"}`}>{row.name}</span>
       </td>
       {MONTHS.map((_, i) => {
-        const month = i + 1;
-        const val   = mv(row, month);
+        const month   = i + 1;
+        const val     = mv(row, month);
+        const prevVal = mv(row, month - 1);
+        const trend   = isExpense && !row.isParent ? expenseTrend(val, prevVal) : null;
         const { from, to } = monthRange(year, month);
-        const clickable = val !== 0;
+        const clickable = val !== 0 && !row.isParent;
         return (
           <td
             key={i}
-            className={`${TD_NUM} ${valColor(val)} ${clickable ? "cursor-pointer hover:underline" : ""}`}
+            className={`${TD_NUM} ${trend ? trendCellColor(trend) : zeroColor(val)} ${clickable ? "cursor-pointer hover:underline" : ""}`}
             onClick={clickable ? () => onNavigate(buildTxUrl(row.code, from, to)) : undefined}
           >
             {fmt(val)}
+            <ExpenseTrendIcon trend={trend} />
           </td>
         );
       })}
       <td
-        className={`${TD_NUM_TOTAL} ${valColor(row.total)} ${row.total !== 0 ? "cursor-pointer hover:underline" : ""}`}
-        onClick={row.total !== 0 ? () => onNavigate(buildTxUrl(row.code, `${year}-01-01`, `${year}-12-31`)) : undefined}
+        className={`${TD_NUM_TOTAL} ${zeroColor(row.total)} ${row.total !== 0 && !row.isParent ? "cursor-pointer hover:underline" : ""}`}
+        onClick={row.total !== 0 && !row.isParent ? () => onNavigate(buildTxUrl(row.code, `${year}-01-01`, `${year}-12-31`)) : undefined}
       >
         {fmt(row.total)}
       </td>
@@ -158,14 +204,34 @@ function SectionRows({
   label,
   rows,
   year,
+  isExpense,
   onNavigate,
 }: {
   label:      string;
   rows:       CoaReportRow[];
   year:       number;
+  isExpense:  boolean;
   onNavigate: (url: string) => void;
 }) {
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+
   if (rows.length === 0) return null;
+
+  function toggle(code: string) {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(code)) next.delete(code);
+      else next.add(code);
+      return next;
+    });
+  }
+
+  const parents  = rows.filter((r) => r.isParent);
+  const children = rows.filter((r) => !r.isParent && r.parentCode !== null);
+  const orphans  = rows.filter((r) => !r.isParent && r.parentCode === null);
+
+  // For the subtotal, use only leaf rows (not parents, which are already aggregates)
+  const leafRows = [...children, ...orphans];
 
   const bg    = "bg-background";
   const subBg = "bg-muted/30";
@@ -182,26 +248,62 @@ function SectionRows({
         </td>
       </tr>
 
-      {/* Account rows */}
-      {rows.map((row) => (
-        <AccountRow key={row.code} row={row} bg={bg} year={year} onNavigate={onNavigate} />
+      {/* Parents with their children, then orphan leaves */}
+      {parents.map((parent) => {
+        const isCollapsed = collapsed.has(parent.code);
+        const kids = children.filter((c) => c.parentCode === parent.code);
+        return (
+          <>
+            <AccountRow
+              key={parent.code}
+              row={parent}
+              bg={bg}
+              year={year}
+              isExpense={isExpense}
+              collapsed={isCollapsed}
+              onNavigate={onNavigate}
+              onToggle={() => toggle(parent.code)}
+            />
+            {!isCollapsed && kids.map((child) => (
+              <AccountRow
+                key={child.code}
+                row={child}
+                bg={bg}
+                year={year}
+                isExpense={isExpense}
+                isChild
+                onNavigate={onNavigate}
+              />
+            ))}
+          </>
+        );
+      })}
+      {orphans.map((row) => (
+        <AccountRow
+          key={row.code}
+          row={row}
+          bg={bg}
+          year={year}
+          isExpense={isExpense}
+          onNavigate={onNavigate}
+        />
       ))}
 
-      {/* Section subtotal */}
+      {/* Section subtotal (based on leaf rows only) */}
       <tr className={`border-b-2 border-t ${subBg} font-semibold`}>
         <td className={`${TD_STICKY} ${subBg} text-sm`}>
           {label} Total
         </td>
         {MONTHS.map((_, i) => {
-          const val = sectionMonthSum(rows, i + 1);
+          const val = sectionMonthSum(leafRows, i + 1);
           return (
-            <td key={i} className={`${TD_NUM} font-semibold ${valColor(val)}`}>
+            <td key={i} className={`${TD_NUM} font-semibold ${zeroColor(val)}`}>
               {fmt(val)}
             </td>
           );
         })}
-        <td className={`${TD_NUM_TOTAL} font-bold ${valColor(sectionTotal(rows))}`}>
-          {fmt(sectionTotal(rows))}
+        <td className={`${TD_NUM_TOTAL} font-bold ${zeroColor(sectionTotal(leafRows))}`}>
+          {fmt(sectionTotal(leafRows))}
         </td>
       </tr>
     </>
@@ -215,6 +317,9 @@ function ResultRow({
   incomeRows:  CoaReportRow[];
   expenseRows: CoaReportRow[];
 }) {
+  // Use only leaf rows to avoid double-counting parents
+  const incomeLeaves  = incomeRows.filter((r)  => !r.isParent);
+  const expenseLeaves = expenseRows.filter((r) => !r.isParent);
   const resultBg = "bg-muted/50";
   return (
     <tr className={`border-y-2 ${resultBg}`}>
@@ -223,17 +328,17 @@ function ResultRow({
       </td>
       {MONTHS.map((_, i) => {
         const m   = i + 1;
-        const val = sectionMonthSum(incomeRows, m) + sectionMonthSum(expenseRows, m);
+        const val = sectionMonthSum(incomeLeaves, m) + sectionMonthSum(expenseLeaves, m);
         return (
-          <td key={i} className={`${TD_NUM} font-bold ${valColor(val)}`}>
+          <td key={i} className={`${TD_NUM} font-bold ${zeroColor(val)}`}>
             {fmt(val)}
           </td>
         );
       })}
-      <td className={`${TD_NUM_TOTAL} font-bold ${valColor(
-        sectionTotal(incomeRows) + sectionTotal(expenseRows)
+      <td className={`${TD_NUM_TOTAL} font-bold ${zeroColor(
+        sectionTotal(incomeLeaves) + sectionTotal(expenseLeaves)
       )}`}>
-        {fmt(sectionTotal(incomeRows) + sectionTotal(expenseRows))}
+        {fmt(sectionTotal(incomeLeaves) + sectionTotal(expenseLeaves))}
       </td>
     </tr>
   );
@@ -272,15 +377,24 @@ export function CoaReport() {
   }, [year]);
 
   const byType = useMemo(() => {
-    const sorted = [...data].sort((a, b) => {
-      const factor = sortDir === "asc" ? 1 : -1;
-      if (sortKey === "code")  return factor * a.code.localeCompare(b.code);
-      if (sortKey === "total") return factor * (a.total - b.total);
-      return factor * (mv(a, sortKey) - mv(b, sortKey));
+    const invert = (row: CoaReportRow): CoaReportRow => ({
+      ...row,
+      months: Object.fromEntries(Object.entries(row.months).map(([m, v]) => [m, -v])),
+      total:  -row.total,
     });
+
+    const sorted = [...data]
+      .map((row) => row.type === "investment" ? invert(row) : row)
+      .sort((a, b) => {
+        const factor = sortDir === "asc" ? 1 : -1;
+        if (sortKey === "code")  return factor * a.code.localeCompare(b.code);
+        if (sortKey === "total") return factor * (a.total - b.total);
+        return factor * (mv(a, sortKey) - mv(b, sortKey));
+      });
 
     const map: Partial<Record<AccountType, CoaReportRow[]>> = {};
     for (const row of sorted) {
+      if (row.type === "transfer") continue;
       if (!map[row.type]) map[row.type] = [];
       map[row.type]!.push(row);
     }
@@ -356,16 +470,15 @@ export function CoaReport() {
               </tr>
             </thead>
             <tbody>
-              <SectionRows label="Income"      rows={byType.income     ?? []} year={year} onNavigate={(url) => router.push(url)} />
-              <SectionRows label="Expenses"    rows={byType.expense    ?? []} year={year} onNavigate={(url) => router.push(url)} />
+              <SectionRows label="Income"      rows={byType.income     ?? []} year={year} isExpense={false} onNavigate={(url) => router.push(url)} />
+              <SectionRows label="Expenses"    rows={byType.expense    ?? []} year={year} isExpense={true}  onNavigate={(url) => router.push(url)} />
               {(byType.income?.length || byType.expense?.length) ? (
                 <ResultRow
                   incomeRows={byType.income ?? []}
                   expenseRows={byType.expense ?? []}
                 />
               ) : null}
-              <SectionRows label="Investments" rows={byType.investment ?? []} year={year} onNavigate={(url) => router.push(url)} />
-              <SectionRows label="Transfers"   rows={byType.transfer   ?? []} year={year} onNavigate={(url) => router.push(url)} />
+              <SectionRows label="Investments" rows={byType.investment ?? []} year={year} isExpense={false} onNavigate={(url) => router.push(url)} />
             </tbody>
           </table>
         </div>

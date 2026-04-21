@@ -90,15 +90,120 @@ const TH_SORT =
   "cursor-pointer select-none hover:bg-muted/60 transition-colors";
 
 // ---------------------------------------------------------------------------
+// Grid component (reused for expenses and income)
+// ---------------------------------------------------------------------------
+
+interface RecipientGridProps {
+  title:   string;
+  rows:    RecipientReportRow[];
+  sortKey: SortKey;
+  sortDir: SortDir;
+  onSort:  (key: SortKey) => void;
+}
+
+function RecipientGrid({ title, rows, sortKey, sortDir, onSort }: RecipientGridProps) {
+  if (rows.length === 0) return null;
+
+  const sorted = [...rows].sort((a, b) => {
+    const factor = sortDir === "asc" ? 1 : -1;
+    if (sortKey === "name")  return factor * a.name.localeCompare(b.name);
+    if (sortKey === "total") return factor * (a.total - b.total);
+    return factor * (mv(a, sortKey as number) - mv(b, sortKey as number));
+  });
+
+  return (
+    <div className="space-y-2">
+      <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+        {title}
+      </h3>
+      <div className="rounded-md border overflow-x-auto">
+        <table className="w-full border-collapse text-sm">
+          <thead>
+            <tr className="border-b bg-muted/40">
+              <th
+                onClick={() => onSort("name")}
+                className={`${TH_STICKY} bg-muted/40 min-w-[220px] ${TH_SORT}`}
+              >
+                Recipient
+                <SortIcon col="name" sortKey={sortKey} sortDir={sortDir} />
+              </th>
+              {MONTHS.map((m, i) => (
+                <th
+                  key={m}
+                  onClick={() => onSort(i + 1)}
+                  className={`px-3 py-2.5 text-right text-xs font-medium uppercase tracking-wide min-w-[90px] ${TH_SORT}`}
+                >
+                  {m}
+                  <SortIcon col={i + 1} sortKey={sortKey} sortDir={sortDir} />
+                </th>
+              ))}
+              <th
+                onClick={() => onSort("total")}
+                className={`px-3 py-2.5 text-right text-xs font-medium uppercase tracking-wide min-w-[110px] border-l ${TH_SORT}`}
+              >
+                Total
+                <SortIcon col="total" sortKey={sortKey} sortDir={sortDir} />
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((row) => (
+              <tr
+                key={row.id}
+                className="border-b bg-background transition-colors hover:brightness-95"
+              >
+                <td className={`${TD_STICKY} bg-background`}>
+                  <span className="text-sm font-medium">{row.name}</span>
+                </td>
+                {MONTHS.map((_, i) => {
+                  const val = mv(row, i + 1);
+                  return (
+                    <td key={i} className={`${TD_NUM} ${valColor(val)}`}>
+                      {fmt(val)}
+                    </td>
+                  );
+                })}
+                <td className={`${TD_NUM_TOTAL} ${valColor(row.total)}`}>
+                  {fmt(row.total)}
+                </td>
+              </tr>
+            ))}
+
+            {/* Grand total row */}
+            <tr className="border-t-2 bg-muted/50 font-semibold">
+              <td className={`${TD_STICKY} bg-muted/50 text-sm font-bold`}>
+                Total
+              </td>
+              {MONTHS.map((_, i) => {
+                const val = grandMonthSum(rows, i + 1);
+                return (
+                  <td key={i} className={`${TD_NUM} font-semibold ${valColor(val)}`}>
+                    {fmt(val)}
+                  </td>
+                );
+              })}
+              <td className={`${TD_NUM_TOTAL} font-bold ${valColor(grandTotal(rows))}`}>
+                {fmt(grandTotal(rows))}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
 
 export function RecipientReport() {
-  const [year,    setYear]    = useState(CURRENT_YEAR);
-  const [data,    setData]    = useState<RecipientReportRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [sortKey, setSortKey] = useState<SortKey>("total");
-  const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [year,     setYear]     = useState(CURRENT_YEAR);
+  const [expenses, setExpenses] = useState<RecipientReportRow[]>([]);
+  const [income,   setIncome]   = useState<RecipientReportRow[]>([]);
+  const [loading,  setLoading]  = useState(true);
+  const [sortKey,  setSortKey]  = useState<SortKey>("total");
+  const [sortDir,  setSortDir]  = useState<SortDir>("desc");
 
   function handleSort(key: SortKey) {
     if (sortKey === key) {
@@ -113,24 +218,18 @@ export function RecipientReport() {
     setLoading(true);
     fetch(`/api/reports/recipients?year=${year}`)
       .then((r) => r.json())
-      .then(({ report }: { report: RecipientReportRow[] }) => {
-        setData(report);
+      .then(({ expenses, income }: { expenses: RecipientReportRow[]; income: RecipientReportRow[] }) => {
+        setExpenses(expenses ?? []);
+        setIncome(income ?? []);
         setLoading(false);
       })
       .catch(() => setLoading(false));
   }, [year]);
 
-  const sorted = useMemo(() => {
-    return [...data].sort((a, b) => {
-      const factor = sortDir === "asc" ? 1 : -1;
-      if (sortKey === "name")  return factor * a.name.localeCompare(b.name);
-      if (sortKey === "total") return factor * (a.total - b.total);
-      return factor * (mv(a, sortKey) - mv(b, sortKey));
-    });
-  }, [data, sortKey, sortDir]);
+  const isEmpty = useMemo(() => expenses.length === 0 && income.length === 0, [expenses, income]);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       {/* Year picker */}
       <div className="flex items-center gap-3">
         <span className="text-sm text-muted-foreground">Year</span>
@@ -151,7 +250,7 @@ export function RecipientReport() {
         </Select>
       </div>
 
-      {/* Table */}
+      {/* Tables */}
       {loading ? (
         <div className="space-y-2">
           <Skeleton className="h-8 w-full" />
@@ -159,83 +258,26 @@ export function RecipientReport() {
             <Skeleton key={i} className="h-10 w-full" />
           ))}
         </div>
-      ) : data.length === 0 ? (
+      ) : isEmpty ? (
         <p className="py-12 text-center text-muted-foreground text-sm">
           No matched recipients found for {year}.
         </p>
       ) : (
-        <div className="rounded-md border overflow-x-auto">
-          <table className="w-full border-collapse text-sm">
-            <thead>
-              <tr className="border-b bg-muted/40">
-                <th
-                  onClick={() => handleSort("name")}
-                  className={`${TH_STICKY} bg-muted/40 min-w-[220px] ${TH_SORT}`}
-                >
-                  Recipient
-                  <SortIcon col="name" sortKey={sortKey} sortDir={sortDir} />
-                </th>
-                {MONTHS.map((m, i) => (
-                  <th
-                    key={m}
-                    onClick={() => handleSort(i + 1)}
-                    className={`px-3 py-2.5 text-right text-xs font-medium uppercase tracking-wide min-w-[90px] ${TH_SORT}`}
-                  >
-                    {m}
-                    <SortIcon col={i + 1} sortKey={sortKey} sortDir={sortDir} />
-                  </th>
-                ))}
-                <th
-                  onClick={() => handleSort("total")}
-                  className={`px-3 py-2.5 text-right text-xs font-medium uppercase tracking-wide min-w-[110px] border-l ${TH_SORT}`}
-                >
-                  Total
-                  <SortIcon col="total" sortKey={sortKey} sortDir={sortDir} />
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {sorted.map((row) => (
-                <tr
-                  key={row.id}
-                  className="border-b bg-background transition-colors hover:brightness-95"
-                >
-                  <td className={`${TD_STICKY} bg-background`}>
-                    <span className="text-sm font-medium">{row.name}</span>
-                  </td>
-                  {MONTHS.map((_, i) => {
-                    const val = mv(row, i + 1);
-                    return (
-                      <td key={i} className={`${TD_NUM} ${valColor(val)}`}>
-                        {fmt(val)}
-                      </td>
-                    );
-                  })}
-                  <td className={`${TD_NUM_TOTAL} ${valColor(row.total)}`}>
-                    {fmt(row.total)}
-                  </td>
-                </tr>
-              ))}
-
-              {/* Grand total row */}
-              <tr className="border-t-2 bg-muted/50 font-semibold">
-                <td className={`${TD_STICKY} bg-muted/50 text-sm font-bold`}>
-                  Total
-                </td>
-                {MONTHS.map((_, i) => {
-                  const val = grandMonthSum(data, i + 1);
-                  return (
-                    <td key={i} className={`${TD_NUM} font-semibold ${valColor(val)}`}>
-                      {fmt(val)}
-                    </td>
-                  );
-                })}
-                <td className={`${TD_NUM_TOTAL} font-bold ${valColor(grandTotal(data))}`}>
-                  {fmt(grandTotal(data))}
-                </td>
-              </tr>
-            </tbody>
-          </table>
+        <div className="space-y-8">
+          <RecipientGrid
+            title="Expenses"
+            rows={expenses}
+            sortKey={sortKey}
+            sortDir={sortDir}
+            onSort={handleSort}
+          />
+          <RecipientGrid
+            title="Income"
+            rows={income}
+            sortKey={sortKey}
+            sortDir={sortDir}
+            onSort={handleSort}
+          />
         </div>
       )}
     </div>

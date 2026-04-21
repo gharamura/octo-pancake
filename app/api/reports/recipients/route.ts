@@ -17,16 +17,31 @@ export async function GET(req: Request) {
     SELECT
       r.id,
       r.name,
-      EXTRACT(MONTH FROM t.transaction_date)::int AS month,
-      SUM(t.amount::numeric)                       AS total
+      EXTRACT(MONTH FROM COALESCE(t.accounting_date, t.transaction_date))::int AS month,
+      SUM(t.amount::numeric)                                                    AS total
     FROM   transactions t
     JOIN   recipient_aliases ra ON ra.alias = t.recipient
     JOIN   recipients r         ON r.id     = ra.recipient_id
-    WHERE  EXTRACT(YEAR FROM t.transaction_date) = ${year}
+    WHERE  EXTRACT(YEAR FROM COALESCE(t.accounting_date, t.transaction_date)) = ${year}
       AND  t.recipient IS NOT NULL
+      AND  t.recipient_id IS NULL
+      AND  t.coa_code NOT IN ('3110', '3120', '3130')
     GROUP  BY r.id, r.name,
-              EXTRACT(MONTH FROM t.transaction_date)::int
-    ORDER  BY r.name, month
+              EXTRACT(MONTH FROM COALESCE(t.accounting_date, t.transaction_date))::int
+    UNION ALL
+    SELECT
+      r.id,
+      r.name,
+      EXTRACT(MONTH FROM COALESCE(t.accounting_date, t.transaction_date))::int AS month,
+      SUM(t.amount::numeric)                                                    AS total
+    FROM   transactions t
+    JOIN   recipients r ON r.id = t.recipient_id
+    WHERE  EXTRACT(YEAR FROM COALESCE(t.accounting_date, t.transaction_date)) = ${year}
+      AND  t.recipient_id IS NOT NULL
+      AND  t.coa_code NOT IN ('3110', '3120', '3130')
+    GROUP  BY r.id, r.name,
+              EXTRACT(MONTH FROM COALESCE(t.accounting_date, t.transaction_date))::int
+    ORDER  BY name, month
   `);
 
   // Build id → { id, name, months, total }
@@ -45,14 +60,21 @@ export async function GET(req: Request) {
 
     if (!map.has(id)) map.set(id, { id, name, months: {}, total: 0 });
     const entry = map.get(id)!;
-    entry.months[month] = val;
+    entry.months[month] = (entry.months[month] ?? 0) + val;
     entry.total += val;
   }
 
-  // Sort by absolute total descending (most active first)
-  const report = Array.from(map.values()).sort(
-    (a, b) => Math.abs(b.total) - Math.abs(a.total)
-  );
+  const all = Array.from(map.values());
 
-  return NextResponse.json({ year, report });
+  // Expenses: recipients with negative total (sort most negative first)
+  const expenses = all
+    .filter((r) => r.total < 0)
+    .sort((a, b) => a.total - b.total);
+
+  // Income: recipients with positive total (sort largest first)
+  const income = all
+    .filter((r) => r.total > 0)
+    .sort((a, b) => b.total - a.total);
+
+  return NextResponse.json({ year, expenses, income });
 }

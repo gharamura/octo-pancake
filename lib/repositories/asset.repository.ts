@@ -18,6 +18,7 @@ export class AssetRepository {
         custodian:      assets.custodian,
         currency:       assets.currency,
         expirationDate: assets.expirationDate,
+        index:          assets.index,
         rule:           assets.rule,
         isActive:       assets.isActive,
         createdAt:      assets.createdAt,
@@ -43,7 +44,7 @@ export class AssetRepository {
     id: string,
     data: Partial<Pick<Asset,
       | "accountId" | "name" | "assetClass" | "geography" | "riskFactor" | "liquidity"
-      | "custodian" | "currency" | "expirationDate" | "rule" | "isActive"
+      | "custodian" | "currency" | "expirationDate" | "index" | "rule" | "isActive"
     >>
   ): Promise<Asset | null> {
     const [asset] = await db.update(assets).set(data).where(eq(assets.id, id)).returning();

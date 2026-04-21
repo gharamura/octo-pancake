@@ -53,11 +53,32 @@ export async function GET(req: Request) {
 
   const codesWithData = new Set(Object.keys(monthMap));
 
+  // Determine which accounts are parents of accounts that have data
+  const parentCodesWithChildren = new Set(
+    accounts
+      .filter((a) => a.parentCode && codesWithData.has(a.code))
+      .map((a) => a.parentCode as string)
+  );
+
   const report = accounts
-    .filter((a) => codesWithData.has(a.code))
+    .filter((a) => codesWithData.has(a.code) || parentCodesWithChildren.has(a.code))
     .map((a) => {
-      const months = monthMap[a.code] ?? {};
-      const total  = Object.values(months).reduce((s, v) => s + v, 0);
+      const isParent = parentCodesWithChildren.has(a.code);
+
+      let months: Record<number, number>;
+      if (isParent) {
+        // Aggregate all children's months into the parent
+        months = {};
+        for (const child of accounts.filter((c) => c.parentCode === a.code)) {
+          for (const [m, v] of Object.entries(monthMap[child.code] ?? {})) {
+            months[Number(m)] = (months[Number(m)] ?? 0) + v;
+          }
+        }
+      } else {
+        months = monthMap[a.code] ?? {};
+      }
+
+      const total = Object.values(months).reduce((s, v) => s + v, 0);
       return {
         code:       a.code,
         name:       a.name,
@@ -65,6 +86,7 @@ export async function GET(req: Request) {
         parentCode: a.parentCode,
         months,
         total,
+        isParent,
       };
     })
     .sort((a, b) => a.code.localeCompare(b.code));

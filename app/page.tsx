@@ -1,9 +1,14 @@
+import Image from "next/image";
 import Link from "next/link";
 
 export default function LandingPage() {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-6 bg-white dark:bg-black">
-      <h1 className="text-4xl font-bold text-black dark:text-white">My App</h1>
+      <Image src="/logo.png" alt="CH Personal Finance" width={160} height={160} priority />
+      <div className="flex flex-col items-center gap-1">
+        <h1 className="text-3xl font-bold tracking-tight text-black dark:text-white">CH Personal Finance</h1>
+        <p className="text-sm text-zinc-500 dark:text-zinc-400">Capistrano Haramura</p>
+      </div>
       <div className="flex gap-3">
         <Link
           href="/auth/sign-in"

@@ -1,4 +1,4 @@
-import { aliasedTable, and, desc, eq, gte, inArray, lte } from "drizzle-orm";
+import { aliasedTable, and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   transactions,
@@ -128,16 +128,34 @@ export class TransactionRepository {
     return result.length > 0;
   }
 
-  /** Update coaCode and/or accountingDate on multiple transactions at once. */
+  /** Update coaCode, accountingDate and/or recipientId on multiple transactions at once. */
   async bulkUpdate(
     ids: string[],
-    data: { coaCode?: string | null; accountingDate?: Date | null }
+    data: { coaCode?: string | null; accountingDate?: Date | null; recipientId?: string | null }
   ): Promise<void> {
     if (ids.length === 0) return;
     await db
       .update(transactions)
       .set(data)
       .where(inArray(transactions.id, ids));
+  }
+
+  /** Find existing transactions matching the same date, account, and amount (duplicate check). */
+  async findDuplicates(date: Date, accountId: string, amount: string): Promise<TransactionRow[]> {
+    return db
+      .select(this.selectFields)
+      .from(transactions)
+      .leftJoin(financialAccounts, eq(transactions.accountId, financialAccounts.id))
+      .leftJoin(coaAccounts, eq(transactions.coaCode, coaAccounts.code))
+      .leftJoin(recipients, eq(transactions.recipientId, recipients.id))
+      .leftJoin(recipientAliases, eq(transactions.recipient, recipientAliases.alias))
+      .leftJoin(aliasRecipient, eq(recipientAliases.recipientId, aliasRecipient.id))
+      .leftJoin(assets, eq(transactions.assetId, assets.id))
+      .where(and(
+        eq(transactions.transactionDate, date),
+        eq(transactions.accountId, accountId),
+        sql`${transactions.amount}::numeric = ${parseFloat(amount)}::numeric`,
+      ));
   }
 
   /** Link two transfer legs together by stamping them with a shared transferId. */

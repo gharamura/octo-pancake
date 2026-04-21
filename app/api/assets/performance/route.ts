@@ -17,17 +17,19 @@ export interface AssetDetail {
 }
 
 export interface MonthPerf {
-  year:                number;
-  month:               number;
-  label:               string;        // e.g. "Jan '25"
-  balance:             number | null;
-  prevBalance:         number | null;
-  contributions:       number;
-  withdrawals:         number;
-  income:              number;
-  pnl:                 number | null;
-  returnPct:           number | null;
-  cumulativeReturnPct: number | null;
+  year:                   number;
+  month:                  number;
+  label:                  string;        // e.g. "Jan '25"
+  balance:                number | null;
+  prevBalance:            number | null;
+  contributions:          number;
+  withdrawals:            number;
+  income:                 number;
+  pnl:                    number | null;
+  returnPct:              number | null;
+  cumulativeReturnPct:    number | null;
+  twrReturnPct:           number | null; // time-weighted, contributions shifted to next month
+  twrCumulativeReturnPct: number | null;
 }
 
 export interface PerformanceResponse {
@@ -44,6 +46,7 @@ export interface PerformanceResponse {
     income:         number;
     pnl:            number | null;
     returnPct:      number | null;
+    twrReturnPct:   number | null;
   };
 }
 
@@ -105,7 +108,7 @@ export async function GET(req: Request) {
           ab.asset_id,
           EXTRACT(YEAR  FROM ab.date)::int,
           EXTRACT(MONTH FROM ab.date)::int,
-          ab.date DESC
+          ab.date ASC
       `)
     : db.execute(sql`
         SELECT DISTINCT ON (
@@ -141,7 +144,7 @@ export async function GET(req: Request) {
           ab.asset_id,
           EXTRACT(YEAR  FROM ab.date)::int,
           EXTRACT(MONTH FROM ab.date)::int,
-          ab.date DESC
+          ab.date ASC
       `)
   );
 
@@ -153,7 +156,13 @@ export async function GET(req: Request) {
           EXTRACT(YEAR  FROM t.transaction_date)::int AS yr,
           EXTRACT(MONTH FROM t.transaction_date)::int AS month,
           t.coa_code,
-          SUM(t.amount::float) AS total
+          SUM(t.amount::float * CASE WHEN t.currency <> 'BRL' THEN (
+            SELECT er.rate::float FROM exchange_rates er
+            WHERE  er.from_currency = t.currency
+              AND  er.to_currency   = 'BRL'
+              AND  er.date         <= t.transaction_date
+            ORDER BY er.date DESC LIMIT 1
+          ) ELSE 1.0 END) AS total
         FROM transactions t
         WHERE t.asset_id IS NOT NULL
           AND t.coa_code IN ('1060', '4110', '4210')
@@ -165,7 +174,13 @@ export async function GET(req: Request) {
           EXTRACT(YEAR  FROM t.transaction_date)::int AS yr,
           EXTRACT(MONTH FROM t.transaction_date)::int AS month,
           t.coa_code,
-          SUM(t.amount::float) AS total
+          SUM(t.amount::float * CASE WHEN t.currency <> 'BRL' THEN (
+            SELECT er.rate::float FROM exchange_rates er
+            WHERE  er.from_currency = t.currency
+              AND  er.to_currency   = 'BRL'
+              AND  er.date         <= t.transaction_date
+            ORDER BY er.date DESC LIMIT 1
+          ) ELSE 1.0 END) AS total
         FROM transactions t
         WHERE t.asset_id IS NOT NULL
           AND t.coa_code IN ('1060', '4110', '4210')
@@ -243,7 +258,8 @@ export async function GET(req: Request) {
 
   // -- Build monthly metrics ------------------------------------------------
   const monthsList: MonthPerf[] = [];
-  let cumFactor = 1, hasCum = false;
+  let runningPnl = 0, periodStartBalance: number | null = null, hasCum = false;
+  let twrFactor = 1, hasTwr = false;
 
   let y = actualFromYear, m = actualFromMonth;
   while (y < actualToYear || (y === actualToYear && m <= actualToMonth)) {
@@ -251,16 +267,35 @@ export async function GET(req: Request) {
     const prevKey     = m === 1 ? `${y - 1}:12` : `${y}:${m - 1}`;
     const balance     = portfolioBalance.get(key)     ?? null;
     const prevBalance = portfolioBalance.get(prevKey) ?? null;
-    const tx          = txByKey[key] ?? { contributions: 0, withdrawals: 0, income: 0 };
+    const tx          = txByKey[key]     ?? { contributions: 0, withdrawals: 0, income: 0 };
+    const prevTx      = txByKey[prevKey] ?? { contributions: 0, withdrawals: 0, income: 0 };
 
     let pnl: number | null = null, returnPct: number | null = null, cumulativeReturnPct: number | null = null;
+    let twrReturnPct: number | null = null, twrCumulativeReturnPct: number | null = null;
 
-    if (balance !== null && prevBalance !== null && prevBalance > 0) {
-      pnl       = balance - prevBalance - tx.contributions + tx.withdrawals + tx.income;
-      returnPct = (pnl / prevBalance) * 100;
-      cumFactor *= 1 + returnPct / 100;
+    // The first month of the selected period is the baseline — no return calculated for it.
+    const isBaseline = (y === actualFromYear && m === actualFromMonth);
+
+    if (!isBaseline && balance !== null && prevBalance !== null && prevBalance > 0) {
+      // Contributions/withdrawals from the previous month are assumed to be deployed
+      // at the start of this month (balances are recorded at the beginning of each month,
+      // so a contribution entered in month M is reflected in month M+1's balance).
+      const adjStart = prevBalance + prevTx.contributions - prevTx.withdrawals;
+
+      pnl       = balance - prevBalance - prevTx.contributions + prevTx.withdrawals + tx.income;
+      returnPct = adjStart > 0 ? (pnl / adjStart) * 100 : null;
+      if (periodStartBalance === null) periodStartBalance = prevBalance;
+      runningPnl += pnl;
       hasCum    = true;
-      cumulativeReturnPct = (cumFactor - 1) * 100;
+      cumulativeReturnPct = (runningPnl / periodStartBalance) * 100;
+
+      // TWR: compounds the same sub-period returns
+      if (adjStart > 0 && returnPct !== null) {
+        twrReturnPct = returnPct;
+        twrFactor *= (1 + twrReturnPct / 100);
+        hasTwr = true;
+        twrCumulativeReturnPct = (twrFactor - 1) * 100;
+      }
     }
 
     monthsList.push({
@@ -271,14 +306,15 @@ export async function GET(req: Request) {
       withdrawals:   tx.withdrawals,
       income:        tx.income,
       pnl, returnPct, cumulativeReturnPct,
+      twrReturnPct, twrCumulativeReturnPct,
     });
 
     m++; if (m > 12) { m = 1; y++; }
   }
 
   // -- YTD / period aggregates ----------------------------------------------
-  const startKey    = actualFromMonth === 1 ? `${actualFromYear - 1}:12` : `${actualFromYear}:${actualFromMonth - 1}`;
-  const startBalance = portfolioBalance.get(startKey) ?? null;
+  // startBalance = first month of the period (the baseline, not the month before it)
+  const startBalance = portfolioBalance.get(`${actualFromYear}:${actualFromMonth}`) ?? null;
   const latestMonth  = monthsList.filter(m => m.balance !== null).at(-1);
   const ytdContrib   = monthsList.reduce((s, m) => s + m.contributions, 0);
   const ytdWithdr    = monthsList.reduce((s, m) => s + m.withdrawals,   0);
@@ -300,7 +336,8 @@ export async function GET(req: Request) {
       withdrawals:    ytdWithdr,
       income:         ytdIncome,
       pnl:            ytdPnl,
-      returnPct:      hasCum ? (cumFactor - 1) * 100 : null,
+      returnPct:      hasCum && periodStartBalance ? (runningPnl / periodStartBalance) * 100 : null,
+      twrReturnPct:   hasTwr ? (twrFactor - 1) * 100 : null,
     },
   } satisfies PerformanceResponse);
 }

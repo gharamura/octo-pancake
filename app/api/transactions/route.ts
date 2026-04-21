@@ -51,20 +51,21 @@ export async function POST(req: Request) {
   return NextResponse.json(transaction, { status: 201 });
 }
 
-// PATCH /api/transactions — bulk update coaCode and/or accountingDate
+// PATCH /api/transactions — bulk update coaCode, accountingDate and/or recipientId
 export async function PATCH(req: Request) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { ids, coaCode, accountingDate } = await req.json();
+  const { ids, coaCode, accountingDate, recipientId } = await req.json();
 
   if (!Array.isArray(ids) || ids.length === 0) {
     return NextResponse.json({ error: "ids array is required." }, { status: 400 });
   }
 
-  const data: { coaCode?: string | null; accountingDate?: Date | null } = {};
+  const data: { coaCode?: string | null; accountingDate?: Date | null; recipientId?: string | null } = {};
   if (coaCode !== undefined)        data.coaCode        = coaCode || null;
   if (accountingDate !== undefined) data.accountingDate = accountingDate ? new Date(accountingDate) : null;
+  if (recipientId !== undefined)    data.recipientId    = recipientId || null;
 
   if (Object.keys(data).length === 0) {
     return NextResponse.json({ error: "Nothing to update." }, { status: 400 });

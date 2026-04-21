@@ -22,7 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { FinancialAccount, CoaAccount } from "@/lib/db/schema";
-import { Check, ChevronsUpDown } from "lucide-react";
+import { AlertTriangle, Check, ChevronsUpDown } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 // ---------------------------------------------------------------------------
@@ -64,7 +64,15 @@ const CURRENCIES = ["BRL", "USD", "EUR", "GBP", "ARS", "CLP", "COP", "MXN", "UYU
 
 const ASSET_COA_CODES = new Set(["1060", "4110", "4210"]);
 
-type AssetOption = { id: string; name: string; assetClass: string | null; currency: string | null; accountId?: string; accountName?: string };
+type AssetOption = { id: string; name: string; assetClass: string | null; currency: string | null; expirationDate?: string | null; accountId?: string; accountName?: string };
+
+function fmtExpiry(val: string | null | undefined): string | null {
+  if (!val) return null;
+  const s = val.includes("T") ? val.split("T")[0] : val;
+  const [y, m, d] = s.split("-");
+  if (!y || !m || !d) return null;
+  return `${d}/${m}/${y}`;
+}
 
 interface TransactionFormProps {
   transaction?: TransactionRow;
@@ -123,6 +131,11 @@ export function TransactionForm({ transaction, onSuccess, onCreated, onSaved, on
   const [deleting,      setDeleting]      = useState(false);
   const [error,         setError]         = useState<string | null>(null);
 
+  type DuplicateHit = { id: string; recipient: string | null; coaName: string | null; amount: string };
+  const [duplicates,        setDuplicates]        = useState<DuplicateHit[]>([]);
+  const [dupeChecking,      setDupeChecking]      = useState(false);
+  const [dupeConfirmed,     setDupeConfirmed]     = useState(false);
+
   useEffect(() => {
     fetch("/api/accounts")
       .then((r) => r.json())
@@ -152,6 +165,28 @@ export function TransactionForm({ transaction, onSuccess, onCreated, onSaved, on
       .then((data: AssetOption[]) => setAssetList(data))
       .catch(() => {});
   }, [accountId, coaCode, showAllAssets]);
+
+  // Debounced duplicate check (create mode only)
+  useEffect(() => {
+    if (isEdit || !transactionDate || !accountId || !amount) {
+      setDuplicates([]);
+      setDupeConfirmed(false);
+      return;
+    }
+    setDupeChecking(true);
+    const timer = setTimeout(() => {
+      const params = new URLSearchParams({ date: transactionDate, accountId, amount });
+      fetch(`/api/transactions/check-duplicate?${params}`)
+        .then(r => r.json())
+        .then(({ duplicates: hits }) => {
+          setDuplicates(hits ?? []);
+          setDupeConfirmed(false);
+        })
+        .catch(() => {})
+        .finally(() => setDupeChecking(false));
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [isEdit, transactionDate, accountId, amount]);
 
   async function handleSubmit() {
     setError(null);
@@ -274,9 +309,9 @@ export function TransactionForm({ transaction, onSuccess, onCreated, onSaved, on
         />
       </div>
 
-      <div className="grid grid-cols-[1fr_auto] gap-3 items-end">
-        <div className="space-y-1.5">
-          <Label htmlFor="amount">Amount</Label>
+      <div className="space-y-1.5">
+        <Label>Amount</Label>
+        <div className="flex gap-2">
           <Input
             id="amount"
             type="number"
@@ -285,12 +320,10 @@ export function TransactionForm({ transaction, onSuccess, onCreated, onSaved, on
             onChange={(e) => setAmount(e.target.value)}
             placeholder="0.00"
             required
+            className="flex-1"
           />
-        </div>
-        <div className="space-y-1.5">
-          <Label>Currency</Label>
           <Select value={currency} onValueChange={setCurrency}>
-            <SelectTrigger className="w-24">
+            <SelectTrigger className="w-24 shrink-0">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -302,6 +335,26 @@ export function TransactionForm({ transaction, onSuccess, onCreated, onSaved, on
         </div>
       </div>
       <p className="text-xs text-muted-foreground -mt-3">Use a negative value for expenses.</p>
+
+      {!isEdit && duplicates.length > 0 && !dupeChecking && (
+        <div className="rounded-md border border-yellow-400/60 bg-yellow-50 dark:bg-yellow-950/30 p-3 space-y-2">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400 shrink-0 mt-0.5" />
+            <div className="flex-1 space-y-1">
+              <p className="text-sm font-medium text-yellow-800 dark:text-yellow-300">
+                Possible duplicate{duplicates.length > 1 ? "s" : ""} found
+              </p>
+              <ul className="space-y-0.5">
+                {duplicates.map(d => (
+                  <li key={d.id} className="text-xs text-yellow-700 dark:text-yellow-400/80">
+                    {d.recipient ?? "—"}{d.coaName ? ` · ${d.coaName}` : ""} · {d.amount}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="space-y-1.5">
         <Label htmlFor="accountingDate">Accounting Month</Label>
@@ -409,12 +462,13 @@ export function TransactionForm({ transaction, onSuccess, onCreated, onSaved, on
                         <SelectItem key={a.id} value={a.id}>
                           <span className="flex flex-col">
                             <span>{a.name}</span>
-                            {a.assetClass && (
-                              <span className="text-xs text-muted-foreground">
-                                {a.assetClass.replace(/_/g, " ")}
-                                {a.currency && a.currency !== "BRL" && ` · ${a.currency}`}
-                              </span>
-                            )}
+                            <span className="text-xs text-muted-foreground">
+                              {[
+                                a.assetClass?.replace(/_/g, " "),
+                                a.currency && a.currency !== "BRL" ? a.currency : null,
+                                fmtExpiry(a.expirationDate) ? `exp. ${fmtExpiry(a.expirationDate)}` : null,
+                              ].filter(Boolean).join(" · ")}
+                            </span>
                           </span>
                         </SelectItem>
                       ))}
@@ -426,12 +480,13 @@ export function TransactionForm({ transaction, onSuccess, onCreated, onSaved, on
                   <SelectItem key={a.id} value={a.id}>
                     <span className="flex flex-col">
                       <span>{a.name}</span>
-                      {a.assetClass && (
-                        <span className="text-xs text-muted-foreground">
-                          {a.assetClass.replace(/_/g, " ")}
-                          {a.currency && a.currency !== "BRL" && ` · ${a.currency}`}
-                        </span>
-                      )}
+                      <span className="text-xs text-muted-foreground">
+                        {[
+                          a.assetClass?.replace(/_/g, " "),
+                          a.currency && a.currency !== "BRL" ? a.currency : null,
+                          fmtExpiry(a.expirationDate) ? `exp. ${fmtExpiry(a.expirationDate)}` : null,
+                        ].filter(Boolean).join(" · ")}
+                      </span>
                     </span>
                   </SelectItem>
                 ))
@@ -487,14 +542,26 @@ export function TransactionForm({ transaction, onSuccess, onCreated, onSaved, on
           )
         )}
 
-        <Button
-          type="submit"
-          variant={isEdit ? "warning" : "success"}
-          disabled={saving || !accountId}
-          className={isEdit ? "" : "ml-auto"}
-        >
-          {saving ? "Saving…" : isEdit ? "Save Changes" : "Add Transaction"}
-        </Button>
+        {!isEdit && duplicates.length > 0 && !dupeConfirmed ? (
+          <Button
+            type="button"
+            variant="warning"
+            disabled={saving || !accountId}
+            className="ml-auto"
+            onClick={() => setDupeConfirmed(true)}
+          >
+            Add Anyway
+          </Button>
+        ) : (
+          <Button
+            type="submit"
+            variant={isEdit ? "warning" : "success"}
+            disabled={saving || !accountId}
+            className={isEdit ? "" : "ml-auto"}
+          >
+            {saving ? "Saving…" : isEdit ? "Save Changes" : "Add Transaction"}
+          </Button>
+        )}
       </div>
     </form>
   );

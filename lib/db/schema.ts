@@ -202,32 +202,38 @@ export type NewAccountBalance = typeof accountBalances.$inferInsert;
 export type AssetClass =
   | "cash_equivalents"
   | "fixed_income"
-  | "fixed_income_private_credit"
-  | "fixed_income_intl_bonds"
+  | "investment_funds"
   | "structured_products"
-  | "equities"
-  | "real_estate_agro"
-  | "private_equity"
+  | "variable_income"
   | "crypto"
-  | "commodities"
-  | "hedge_funds"
   | "pension";
 
 export type AssetGeography = "BR" | "US" | "China" | "Global" | "Offshore USD";
 
 export type AssetRiskFactor =
-  | "interest_rate"
-  | "credit_spread"
-  | "equity"
-  | "commodity"
+  | "agro"
+  | "real_estate"
+  | "alternatives"
+  | "bank"
+  | "corporate"
+  | "cash"
   | "crypto"
-  | "structured_optionality"
-  | "illiquid_private_assets"
-  | "dollar"
+  | "china"
+  | "us"
+  | "commodities"
+  | "debentures"
+  | "etf"
+  | "adr"
+  | "reit"
   | "gold"
-  | "inflation";
+  | "hedge"
+  | "stocks"
+  | "fixed_income";
 
-export type AssetLiquidity = "daily" | "d30_90" | "lockup" | "closed_end" | "illiquid";
+// "market" | "lockup" | a numeric string representing days (e.g. "30", "90")
+export type AssetLiquidity = string;
+
+export type AssetIndex = "VGBL" | "PGBL" | "CDI" | "Pre" | "IPCA" | "TR";
 
 export const assets = pgTable(
   "assets",
@@ -244,6 +250,7 @@ export const assets = pgTable(
     custodian:      text("custodian"),
     currency:       text("currency").notNull().default("BRL"),
     expirationDate: date("expiration_date", { mode: "date" }),
+    index:          text("index").$type<AssetIndex>(),
     rule:           text("rule"),
     isActive:       boolean("is_active").notNull().default(true),
     createdAt: timestamp("created_at").defaultNow().notNull(),

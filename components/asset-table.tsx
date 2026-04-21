@@ -3,6 +3,7 @@
 import {
   type ColumnDef,
   getCoreRowModel,
+  getExpandedRowModel,
   useReactTable,
   flexRender,
 } from "@tanstack/react-table";
@@ -31,43 +32,35 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { AssetForm } from "@/components/asset-form";
-import { type Asset, type AssetClass, type AssetLiquidity } from "@/lib/db/schema";
+import { AssetImport } from "@/components/asset-import";
+import { type Asset, type AssetClass } from "@/lib/db/schema";
 import type { AssetWithAccount } from "@/lib/repositories/asset.repository";
-import { ChevronDown, ListFilter, Pencil, Plus } from "lucide-react";
+import { ChevronDown, ChevronRight, Download, ListFilter, Pencil, Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import * as XLSX from "xlsx";
 
 // ---------------------------------------------------------------------------
 // Class labels & badges
 // ---------------------------------------------------------------------------
 
 const CLASS_LABELS: Record<AssetClass, string> = {
-  cash_equivalents:            "Cash Equivalents",
-  fixed_income:               "Fixed Income",
-  fixed_income_private_credit: "FI – Private Credit",
-  fixed_income_intl_bonds:    "FI – Intl Bonds",
-  structured_products:        "Structured Products",
-  equities:                   "Equities",
-  real_estate_agro:           "Real Estate & Agro",
-  private_equity:             "Private Equity",
-  crypto:                     "Crypto",
-  commodities:               "Commodities",
-  hedge_funds:               "Hedge Funds",
-  pension:                    "Pension",
+  cash_equivalents:   "Cash Equivalents",
+  fixed_income:       "Fixed Income",
+  investment_funds:   "Investment Funds",
+  structured_products: "Structured Products",
+  variable_income:    "Variable Income",
+  crypto:             "Crypto",
+  pension:            "Pension",
 };
 
 const CLASS_BADGE: Record<AssetClass, string> = {
-  cash_equivalents:            "bg-gray-100    text-gray-700   dark:bg-gray-800       dark:text-gray-300",
-  fixed_income:               "bg-green-100   text-green-800  dark:bg-green-900/30   dark:text-green-400",
-  fixed_income_private_credit: "bg-teal-100    text-teal-800   dark:bg-teal-900/30    dark:text-teal-400",
-  fixed_income_intl_bonds:    "bg-cyan-100    text-cyan-800   dark:bg-cyan-900/30    dark:text-cyan-400",
-  structured_products:        "bg-amber-100   text-amber-800  dark:bg-amber-900/30   dark:text-amber-400",
-  equities:                   "bg-blue-100    text-blue-800   dark:bg-blue-900/30    dark:text-blue-400",
-  real_estate_agro:           "bg-lime-100    text-lime-800   dark:bg-lime-900/30    dark:text-lime-400",
-  private_equity:             "bg-violet-100  text-violet-800 dark:bg-violet-900/30  dark:text-violet-400",
-  crypto:                     "bg-yellow-100  text-yellow-800 dark:bg-yellow-900/30  dark:text-yellow-400",
-  commodities:               "bg-orange-100  text-orange-800 dark:bg-orange-900/30  dark:text-orange-400",
-  hedge_funds:               "bg-indigo-100  text-indigo-800 dark:bg-indigo-900/30  dark:text-indigo-400",
-  pension:                    "bg-pink-100    text-pink-800   dark:bg-pink-900/30    dark:text-pink-400",
+  cash_equivalents:   "bg-gray-100   text-gray-700   dark:bg-gray-800      dark:text-gray-300",
+  fixed_income:       "bg-green-100  text-green-800  dark:bg-green-900/30  dark:text-green-400",
+  investment_funds:   "bg-blue-100   text-blue-800   dark:bg-blue-900/30   dark:text-blue-400",
+  structured_products: "bg-amber-100  text-amber-800  dark:bg-amber-900/30  dark:text-amber-400",
+  variable_income:    "bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-400",
+  crypto:             "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400",
+  pension:            "bg-pink-100   text-pink-800   dark:bg-pink-900/30   dark:text-pink-400",
 };
 
 // ---------------------------------------------------------------------------
@@ -126,6 +119,54 @@ function FilterHeader<T extends string>({
 }
 
 // ---------------------------------------------------------------------------
+// Asset grouping
+// ---------------------------------------------------------------------------
+
+type GroupedAsset = AssetWithAccount & {
+  _groupIds:          string[];
+  _groupAccountNames: string[];
+  subRows?:           GroupedAsset[];
+};
+
+function assetGroupKey(a: AssetWithAccount): string {
+  const exp = a.expirationDate ? String(a.expirationDate).split("T")[0] : "";
+  return [a.name, a.currency, a.assetClass ?? "", (a as any).index ?? "", a.liquidity ?? "", exp].join("|");
+}
+
+function groupAssets(list: AssetWithAccount[]): GroupedAsset[] {
+  const map = new Map<string, AssetWithAccount[]>();
+  for (const a of list) {
+    const k = assetGroupKey(a);
+    if (!map.has(k)) map.set(k, []);
+    map.get(k)!.push(a);
+  }
+  return Array.from(map.values()).map((group) => {
+    const first        = group[0];
+    const accountNames = group.map((a) => a.accountName).filter(Boolean) as string[];
+    const isGrouped    = group.length > 1;
+
+    const subRows: GroupedAsset[] | undefined = isGrouped
+      ? group.map((a) => ({
+          ...a,
+          _groupIds:          [a.id],
+          _groupAccountNames: [a.accountName ?? ""],
+          subRows:            undefined,
+        }))
+      : undefined;
+
+    return {
+      ...first,
+      accountName: isGrouped
+        ? `${accountNames[0]} +${accountNames.length - 1}`
+        : accountNames[0] ?? null,
+      _groupIds:          group.map((a) => a.id),
+      _groupAccountNames: accountNames,
+      subRows,
+    };
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Sheet state
 // ---------------------------------------------------------------------------
 
@@ -157,7 +198,7 @@ export function AssetTable() {
   const [loading,       setLoading]       = useState(true);
   const [sheet,              setSheet]              = useState<SheetState>({ open: false, mode: "create" });
   const [selectedClasses,    setSelectedClasses]    = useState<AssetClass[]>([]);
-  const [selectedLiquidities, setSelectedLiquidities] = useState<AssetLiquidity[]>([]);
+  const [selectedLiquidities, setSelectedLiquidities] = useState<string[]>([]);
   const [selectedAccounts,   setSelectedAccounts]   = useState<string[]>([]);
 
   const fetchAssets = useCallback(() => {
@@ -177,7 +218,7 @@ export function AssetTable() {
     setSelectedClasses((prev) => prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c]), []);
   const clearClasses    = useCallback(() => setSelectedClasses([]), []);
 
-  const toggleLiquidity = useCallback((l: AssetLiquidity) =>
+  const toggleLiquidity = useCallback((l: string) =>
     setSelectedLiquidities((prev) => prev.includes(l) ? prev.filter((x) => x !== l) : [...prev, l]), []);
   const clearLiquidities = useCallback(() => setSelectedLiquidities([]), []);
 
@@ -188,11 +229,13 @@ export function AssetTable() {
   const filteredAssets = useMemo(() => {
     return assetList.filter((a) => {
       if (selectedClasses.length    && !(a.assetClass && selectedClasses.includes(a.assetClass)))       return false;
-      if (selectedLiquidities.length && !(a.liquidity  && selectedLiquidities.includes(a.liquidity as AssetLiquidity))) return false;
+      if (selectedLiquidities.length && !(a.liquidity  && selectedLiquidities.includes(a.liquidity))) return false;
       if (selectedAccounts.length   && !(a.accountName && selectedAccounts.includes(a.accountName)))    return false;
       return true;
     });
   }, [assetList, selectedClasses, selectedLiquidities, selectedAccounts]);
+
+  const groupedAssets = useMemo(() => groupAssets(filteredAssets), [filteredAssets]);
 
   const availableClasses = useMemo(() =>
     new Set(assetList.map((a) => a.assetClass).filter(Boolean) as AssetClass[]),
@@ -206,15 +249,12 @@ export function AssetTable() {
     [availableClasses]
   );
 
-  const LIQUIDITY_LABELS: Record<AssetLiquidity, string> = {
-    daily: "Daily", d30_90: "D+30–90", lockup: "Lock-up", closed_end: "Closed-end", illiquid: "Illiquid",
-  };
-
   const liquidityOptions = useMemo(() => {
-    const available = new Set(assetList.map((a) => a.liquidity).filter(Boolean) as AssetLiquidity[]);
-    return (Object.keys(LIQUIDITY_LABELS) as AssetLiquidity[])
-      .filter((v) => available.has(v))
-      .map((v) => ({ value: v, label: LIQUIDITY_LABELS[v] }));
+    const available = Array.from(new Set(assetList.map((a) => a.liquidity).filter(Boolean) as string[]));
+    return available.sort().map((v) => ({
+      value: v,
+      label: v === "market" ? "Market" : v === "lockup" ? "Lock-up" : `${v}d`,
+    }));
   }, [assetList]);
 
   const accountOptions = useMemo(() => {
@@ -230,13 +270,72 @@ export function AssetTable() {
     fetchAssets();
   }, [fetchAssets]);
 
-  const columns = useMemo<ColumnDef<AssetWithAccount>[]>(
+  const exportRows = useCallback((format: "csv" | "xlsx") => {
+    const fmtDate = (val: unknown) => {
+      if (!val) return "";
+      const s = String(val);
+      return s.includes("T") ? s.split("T")[0] : s;
+    };
+
+    const rows = assetList.map((a) => ({
+      id:             a.id,
+      name:           a.name,
+      account_id:     a.accountId,
+      account_name:   a.accountName ?? "",
+      asset_class:    a.assetClass  ?? "",
+      geography:      a.geography   ?? "",
+      risk_factor:    a.riskFactor  ?? "",
+      liquidity:      a.liquidity   ?? "",
+      custodian:      a.custodian   ?? "",
+      currency:       a.currency,
+      expiration_date: fmtDate(a.expirationDate),
+      index:          a.index       ?? "",
+      rule:           a.rule        ?? "",
+      is_active:      a.isActive ? "true" : "false",
+      created_at:     fmtDate(a.createdAt),
+      updated_at:     fmtDate(a.updatedAt),
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Assets");
+
+    const filename = `assets_${new Date().toISOString().slice(0, 10)}`;
+    if (format === "xlsx") {
+      XLSX.writeFile(wb, `${filename}.xlsx`);
+    } else {
+      XLSX.writeFile(wb, `${filename}.csv`, { bookType: "csv" });
+    }
+  }, [assetList]);
+
+  const columns = useMemo<ColumnDef<GroupedAsset>[]>(
     () => [
+      {
+        id: "expander",
+        header: () => null,
+        cell: ({ row }) => {
+          if (!row.getCanExpand()) return null;
+          return (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6"
+              onClick={row.getToggleExpandedHandler()}
+            >
+              {row.getIsExpanded()
+                ? <ChevronDown className="h-3.5 w-3.5" />
+                : <ChevronRight className="h-3.5 w-3.5" />}
+            </Button>
+          );
+        },
+      },
       {
         accessorKey: "name",
         header: "Name",
         cell: ({ row }) => (
-          <span className="font-medium">{row.getValue("name")}</span>
+          <span className={`font-medium ${row.depth > 0 ? "pl-4 text-muted-foreground" : ""}`}>
+            {row.depth > 0 ? "↳" : ""} {row.getValue("name")}
+          </span>
         ),
       },
       {
@@ -281,11 +380,9 @@ export function AssetTable() {
         cell: ({ row }) => {
           const v = row.getValue("liquidity") as string | null;
           if (!v) return <span className="text-muted-foreground text-xs">—</span>;
-          const labels: Record<string, string> = {
-            daily: "Daily", d30_90: "D+30–90", lockup: "Lock-up",
-            closed_end: "Closed-end", illiquid: "Illiquid",
-          };
-          return <span className="text-xs">{labels[v] ?? v}</span>;
+          if (v === "market")  return <span className="text-xs">Market</span>;
+          if (v === "lockup")  return <span className="text-xs">Lock-up</span>;
+          return <span className="text-xs">{v}d</span>;
         },
       },
       {
@@ -299,9 +396,12 @@ export function AssetTable() {
             onClear={clearAccounts}
           />
         ),
-        cell: ({ row }) => (
-          <span className="text-muted-foreground">{row.getValue("accountName") ?? "—"}</span>
-        ),
+        cell: ({ row }) => {
+          const name = row.depth > 0
+            ? row.original._groupAccountNames[0] ?? row.getValue("accountName")
+            : row.getValue("accountName");
+          return <span className="text-muted-foreground">{name ?? "—"}</span>;
+        },
       },
       {
         accessorKey: "custodian",
@@ -327,6 +427,16 @@ export function AssetTable() {
         ),
       },
       {
+        accessorKey: "index",
+        header: "Index",
+        cell: ({ row }) => {
+          const v = row.getValue("index") as string | null;
+          return v
+            ? <span className="inline-flex rounded-full px-2 py-0.5 text-xs font-medium bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-400">{v}</span>
+            : <span className="text-muted-foreground text-xs">—</span>;
+        },
+      },
+      {
         accessorKey: "rule",
         header: "Rule",
         cell: ({ row }) => (
@@ -349,16 +459,20 @@ export function AssetTable() {
       },
       {
         id: "actions",
-        cell: ({ row }) => (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={() => openEdit(row.original)}
-          >
-            <Pencil className="h-3.5 w-3.5" />
-          </Button>
-        ),
+        cell: ({ row }) => {
+          // Show edit on single assets or on expanded sub-rows; hide on collapsed group header
+          if (row.original._groupIds.length > 1) return null;
+          return (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={() => openEdit(row.original)}
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </Button>
+          );
+        },
       },
     ],
     [openEdit, classOptions, selectedClasses, toggleClass, clearClasses,
@@ -367,9 +481,11 @@ export function AssetTable() {
   );
 
   const table = useReactTable({
-    data: filteredAssets,
+    data:              groupedAssets,
     columns,
-    getCoreRowModel: getCoreRowModel(),
+    getSubRows:        (row) => row.subRows,
+    getCoreRowModel:   getCoreRowModel(),
+    getExpandedRowModel: getExpandedRowModel(),
   });
 
   if (loading) {
@@ -393,7 +509,27 @@ export function AssetTable() {
 
   return (
     <>
-      <div className="flex justify-end">
+      <div className="flex items-center justify-end gap-2">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" disabled={assetList.length === 0}>
+              <Download className="h-4 w-4 mr-1" />
+              Export
+              <ChevronDown className="h-3.5 w-3.5 ml-1 opacity-60" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onSelect={() => exportRows("xlsx")}>
+              Download as XLSX
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => exportRows("csv")}>
+              Download as CSV
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <AssetImport assets={assetList} onApplied={fetchAssets} />
+
         <Button variant="success" size="sm" onClick={openCreate}>
           <Plus className="h-4 w-4 mr-1" />
           New Asset
@@ -416,7 +552,10 @@ export function AssetTable() {
           <TableBody>
             {rows.length ? (
               rows.map((row) => (
-                <TableRow key={row.id}>
+                <TableRow
+                  key={row.id}
+                  className={row.depth > 0 ? "bg-muted/30" : undefined}
+                >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id}>
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}

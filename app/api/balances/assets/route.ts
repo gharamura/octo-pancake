@@ -12,14 +12,17 @@ import { NextResponse } from "next/server";
 
 /** Key for months map is "YYYY-MM" string */
 export interface AssetBalanceReportRow {
-  assetId:       string;
-  name:          string;
-  assetClass:    string | null;
-  currency:      string;
-  accountId:     string;
-  accountName:   string | null;
-  months:        Record<string, number>;        // "YYYY-MM" → balance
-  exchangeRates: Record<string, number | null>; // "YYYY-MM" → rate to BRL
+  assetId:        string;
+  name:           string;
+  assetClass:     string | null;
+  index:          string | null;
+  liquidity:      string | null;
+  expirationDate: string | null;
+  currency:       string;
+  accountId:      string;
+  accountName:    string | null;
+  months:         Record<string, number>;        // "YYYY-MM" → balance
+  exchangeRates:  Record<string, number | null>; // "YYYY-MM" → rate to BRL
 }
 
 export async function GET(req: Request) {
@@ -50,9 +53,12 @@ export async function GET(req: Request) {
 
   const result = await db.execute(sql`
     SELECT
-      a.id          AS asset_id,
+      a.id                                    AS asset_id,
       a.name,
       a.asset_class,
+      a.index,
+      a.liquidity,
+      TO_CHAR(a.expiration_date, 'YYYY-MM-DD') AS expiration_date,
       a.currency,
       a.account_id,
       f.name        AS account_name,
@@ -88,14 +94,17 @@ export async function GET(req: Request) {
     const id = row.asset_id as string;
     if (!assetMap.has(id)) {
       assetMap.set(id, {
-        assetId:       id,
-        name:          row.name         as string,
-        assetClass:    row.asset_class  as string | null,
-        currency:      row.currency     as string,
-        accountId:     row.account_id   as string,
-        accountName:   row.account_name as string | null,
-        months:        {},
-        exchangeRates: {},
+        assetId:        id,
+        name:           row.name            as string,
+        assetClass:     row.asset_class     as string | null,
+        index:          row.index           as string | null,
+        liquidity:      row.liquidity       as string | null,
+        expirationDate: row.expiration_date as string | null,
+        currency:       row.currency        as string,
+        accountId:      row.account_id      as string,
+        accountName:    row.account_name    as string | null,
+        months:         {},
+        exchangeRates:  {},
       });
     }
     const key = row.month_key as string;

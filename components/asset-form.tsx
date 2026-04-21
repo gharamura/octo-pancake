@@ -15,6 +15,7 @@ import {
   type Asset,
   type AssetClass,
   type AssetGeography,
+  type AssetIndex,
   type AssetLiquidity,
   type AssetRiskFactor,
   type FinancialAccount,
@@ -24,18 +25,13 @@ import { useEffect, useState } from "react";
 const CURRENCIES = ["BRL", "USD", "EUR", "GBP", "ARS", "CLP", "COP", "MXN", "UYU", "BTC", "ETH"];
 
 const ASSET_CLASSES: { value: AssetClass; label: string }[] = [
-  { value: "cash_equivalents",            label: "Cash Equivalents" },
-  { value: "fixed_income",               label: "Fixed Income" },
-  { value: "fixed_income_private_credit", label: "Fixed Income – Private Credit" },
-  { value: "fixed_income_intl_bonds",    label: "Fixed Income – Intl Bonds" },
-  { value: "structured_products",        label: "Structured Products" },
-  { value: "equities",                   label: "Equities" },
-  { value: "real_estate_agro",           label: "Real Estate & Agro" },
-  { value: "private_equity",             label: "Private Equity" },
-  { value: "crypto",                     label: "Crypto" },
-  { value: "commodities",               label: "Commodities" },
-  { value: "hedge_funds",               label: "Hedge Funds" },
-  { value: "pension",                    label: "Pension" },
+  { value: "cash_equivalents",   label: "Cash Equivalents" },
+  { value: "fixed_income",       label: "Fixed Income" },
+  { value: "investment_funds",   label: "Investment Funds" },
+  { value: "structured_products", label: "Structured Products" },
+  { value: "variable_income",    label: "Variable Income" },
+  { value: "crypto",             label: "Crypto" },
+  { value: "pension",            label: "Pension" },
 ];
 
 const GEOGRAPHIES: { value: AssetGeography; label: string }[] = [
@@ -47,25 +43,41 @@ const GEOGRAPHIES: { value: AssetGeography; label: string }[] = [
 ];
 
 const RISK_FACTORS: { value: AssetRiskFactor; label: string }[] = [
-  { value: "interest_rate",           label: "Interest Rate" },
-  { value: "credit_spread",           label: "Credit Spread" },
-  { value: "equity",                  label: "Equity" },
-  { value: "commodity",               label: "Commodity" },
-  { value: "crypto",                  label: "Crypto" },
-  { value: "structured_optionality",  label: "Structured Optionality" },
-  { value: "illiquid_private_assets", label: "Illiquid Private Assets" },
-  { value: "dollar",                  label: "Dollar" },
-  { value: "gold",                    label: "Gold" },
-  { value: "inflation",               label: "Inflation" },
+  { value: "adr",          label: "ADR" },
+  { value: "agro",         label: "Agro" },
+  { value: "alternatives", label: "Alternatives" },
+  { value: "bank",         label: "Bank" },
+  { value: "cash",         label: "Cash" },
+  { value: "china",        label: "China" },
+  { value: "commodities",  label: "Commodities" },
+  { value: "corporate",    label: "Corporate" },
+  { value: "crypto",       label: "Crypto" },
+  { value: "debentures",   label: "Debentures" },
+  { value: "etf",          label: "ETF" },
+  { value: "fixed_income", label: "Fixed Income" },
+  { value: "gold",         label: "Gold" },
+  { value: "hedge",        label: "Hedge" },
+  { value: "real_estate",  label: "Real Estate" },
+  { value: "reit",         label: "REIT" },
+  { value: "stocks",       label: "Stocks" },
+  { value: "us",           label: "US" },
 ];
 
-const LIQUIDITIES: { value: AssetLiquidity; label: string }[] = [
-  { value: "daily",      label: "Daily" },
-  { value: "d30_90",     label: "D+30–90" },
-  { value: "lockup",     label: "Lock-up" },
-  { value: "closed_end", label: "Closed-end" },
-  { value: "illiquid",   label: "Illiquid" },
+const INDEXES: { value: AssetIndex; label: string }[] = [
+  { value: "CDI",  label: "CDI" },
+  { value: "IPCA", label: "IPCA" },
+  { value: "PGBL", label: "PGBL" },
+  { value: "Pre",  label: "Pre" },
+  { value: "TR",   label: "TR" },
+  { value: "VGBL", label: "VGBL" },
 ];
+
+function parseLiquidity(raw: string): { type: "market" | "lockup" | "days" | ""; days: string } {
+  if (!raw) return { type: "", days: "" };
+  if (raw === "market") return { type: "market", days: "" };
+  if (raw === "lockup") return { type: "lockup", days: "" };
+  return { type: "days", days: raw };
+}
 
 function toDateInputValue(val: unknown): string {
   if (!val) return "";
@@ -87,7 +99,14 @@ export function AssetForm({ asset, onSuccess }: AssetFormProps) {
   const [assetClass,     setAssetClass]     = useState<AssetClass | "">(asset?.assetClass ?? "");
   const [geography,      setGeography]      = useState<AssetGeography | "">(asset?.geography ?? "");
   const [riskFactor,     setRiskFactor]     = useState<AssetRiskFactor | "">(asset?.riskFactor ?? "");
-  const [liquidity,      setLiquidity]      = useState<AssetLiquidity | "">(asset?.liquidity ?? "");
+  const [index,          setIndex]          = useState<AssetIndex | "">(asset?.index ?? "");
+  const parsed = parseLiquidity(asset?.liquidity ?? "");
+  const [liquidityType, setLiquidityType] = useState<"market" | "lockup" | "days" | "">(parsed.type);
+  const [liquidityDays, setLiquidityDays] = useState(parsed.days);
+  const liquidity = liquidityType === "market" ? "market"
+    : liquidityType === "lockup" ? "lockup"
+    : liquidityType === "days" && liquidityDays ? liquidityDays
+    : "";
   const [custodian,      setCustodian]      = useState(asset?.custodian       ?? "");
   const [currency,       setCurrency]       = useState(asset?.currency        ?? "BRL");
   const [expirationDate, setExpirationDate] = useState(toDateInputValue(asset?.expirationDate));
@@ -116,6 +135,7 @@ export function AssetForm({ asset, onSuccess }: AssetFormProps) {
         assetClass:     assetClass     || null,
         geography:      geography      || null,
         riskFactor:     riskFactor     || null,
+        index:          index          || null,
         liquidity:      liquidity      || null,
         custodian:      custodian      || null,
         currency,
@@ -232,16 +252,32 @@ export function AssetForm({ asset, onSuccess }: AssetFormProps) {
 
         <div className="space-y-1.5">
           <Label>Liquidity</Label>
-          <Select value={liquidity} onValueChange={(v) => setLiquidity(v as AssetLiquidity)}>
+          <Select
+            value={liquidityType || "__none__"}
+            onValueChange={(v) => {
+              setLiquidityType(v === "__none__" ? "" : v as "market" | "lockup" | "days");
+              if (v !== "days") setLiquidityDays("");
+            }}
+          >
             <SelectTrigger>
               <SelectValue placeholder="Select…" />
             </SelectTrigger>
             <SelectContent>
-              {LIQUIDITIES.map((l) => (
-                <SelectItem key={l.value} value={l.value}>{l.label}</SelectItem>
-              ))}
+              <SelectItem value="__none__">— None —</SelectItem>
+              <SelectItem value="market">Market</SelectItem>
+              <SelectItem value="lockup">Lock-up</SelectItem>
+              <SelectItem value="days">Days</SelectItem>
             </SelectContent>
           </Select>
+          {liquidityType === "days" && (
+            <Input
+              type="number"
+              min="1"
+              placeholder="e.g. 30"
+              value={liquidityDays}
+              onChange={(e) => setLiquidityDays(e.target.value)}
+            />
+          )}
         </div>
       </div>
 
@@ -291,6 +327,21 @@ export function AssetForm({ asset, onSuccess }: AssetFormProps) {
           value={expirationDate}
           onChange={(e) => setExpirationDate(e.target.value)}
         />
+      </div>
+
+      <div className="space-y-1.5">
+        <Label>Index</Label>
+        <Select value={index || "__none__"} onValueChange={(v) => setIndex(v === "__none__" ? "" : v as AssetIndex)}>
+          <SelectTrigger>
+            <SelectValue placeholder="Select index…" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__none__">— None —</SelectItem>
+            {INDEXES.map((i) => (
+              <SelectItem key={i.value} value={i.value}>{i.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="space-y-1.5">

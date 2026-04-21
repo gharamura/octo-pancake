@@ -44,7 +44,7 @@ export async function POST(req: Request) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { accountId, name, assetClass, geography, riskFactor, liquidity, custodian, currency, expirationDate, rule, isActive } =
+  const { accountId, name, assetClass, geography, riskFactor, liquidity, custodian, currency, expirationDate, index, rule, isActive } =
     await req.json();
 
   if (!accountId || !name) {
@@ -61,6 +61,7 @@ export async function POST(req: Request) {
     custodian:      custodian      ?? null,
     currency:       currency       ?? "BRL",
     expirationDate: expirationDate ? new Date(expirationDate) : null,
+    index:          index          ?? null,
     rule:           rule           ?? null,
     isActive:       isActive       ?? true,
   });

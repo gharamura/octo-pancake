@@ -33,6 +33,14 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
   Sheet,
   SheetContent,
   SheetHeader,
@@ -296,34 +304,44 @@ function MonthFilter({
 // ---------------------------------------------------------------------------
 
 type CoaOption = { code: string; name: string };
+type RecipientOption = { id: string; name: string };
 
 function BulkEditBar({
   selectedCount,
   coaOptions,
+  recipients,
   onApply,
   onClear,
 }: {
   selectedCount: number;
-  coaOptions: CoaOption[];
-  onApply: (data: { coaCode?: string | null; accountingDate?: string | null }) => Promise<void>;
+  coaOptions:   CoaOption[];
+  recipients:   RecipientOption[];
+  onApply: (data: { coaCode?: string | null; accountingDate?: string | null; recipientId?: string | null }) => Promise<void>;
   onClear: () => void;
 }) {
   const [coaCode,         setCoaCode]         = useState("");   // "" = no change; "__clear__" = set null
   const [accountingMonth, setAccountingMonth] = useState("");   // "YYYY-MM" or ""
-  const [applying, setApplying] = useState(false);
+  const [recipientId,     setRecipientId]     = useState("");   // "" = no change; "__clear__" = set null
+  const [recipientSearch, setRecipientSearch] = useState("");
+  const [recipientOpen,   setRecipientOpen]   = useState(false);
+  const [applying,        setApplying]        = useState(false);
 
-  const hasChanges = !!coaCode || !!accountingMonth;
+  const selectedRecipientName = recipients.find((r) => r.id === recipientId)?.name;
+  const hasChanges = !!coaCode || !!accountingMonth || !!recipientId;
 
   const handleApply = async () => {
     if (!hasChanges) return;
     setApplying(true);
-    const data: { coaCode?: string | null; accountingDate?: string | null } = {};
-    if (coaCode)         data.coaCode        = coaCode === "__clear__" ? null : coaCode;
+    const data: { coaCode?: string | null; accountingDate?: string | null; recipientId?: string | null } = {};
+    if (coaCode)     data.coaCode     = coaCode     === "__clear__" ? null : coaCode;
     if (accountingMonth) data.accountingDate = `${accountingMonth}-01`;
+    if (recipientId) data.recipientId = recipientId === "__clear__" ? null : recipientId;
     await onApply(data);
     setApplying(false);
     setCoaCode("");
     setAccountingMonth("");
+    setRecipientId("");
+    setRecipientSearch("");
   };
 
   return (
@@ -350,6 +368,49 @@ function BulkEditBar({
           ))}
         </SelectContent>
       </Select>
+
+      {/* Recipient picker */}
+      <Popover open={recipientOpen} onOpenChange={setRecipientOpen}>
+        <PopoverTrigger asChild>
+          <Button variant="outline" className="h-8 w-52 justify-between text-xs font-normal">
+            <span className={selectedRecipientName ? "" : "text-muted-foreground"}>
+              {recipientId === "__clear__"
+                ? <span className="italic text-muted-foreground">— Clear recipient —</span>
+                : selectedRecipientName ?? "Set recipient…"}
+            </span>
+            <ChevronDown className="ml-1 h-3 w-3 shrink-0 opacity-50" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-64 p-0" align="start">
+          <Command>
+            <CommandInput
+              placeholder="Search recipients…"
+              value={recipientSearch}
+              onValueChange={setRecipientSearch}
+            />
+            <CommandList>
+              <CommandEmpty>No recipient found.</CommandEmpty>
+              <CommandGroup>
+                <CommandItem
+                  value="__clear__"
+                  onSelect={() => { setRecipientId("__clear__"); setRecipientOpen(false); }}
+                >
+                  <span className="italic text-muted-foreground text-xs">— Clear recipient —</span>
+                </CommandItem>
+                {recipients.map((r) => (
+                  <CommandItem
+                    key={r.id}
+                    value={r.name}
+                    onSelect={() => { setRecipientId(r.id); setRecipientOpen(false); }}
+                  >
+                    {r.name}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
 
       {/* Accounting period (month picker) */}
       <Input
@@ -696,7 +757,7 @@ export function TransactionTable({ initialCoa, initialFrom, initialTo, initialAc
   }, []);
 
   const handleBulkApply = useCallback(async (
-    data: { coaCode?: string | null; accountingDate?: string | null }
+    data: { coaCode?: string | null; accountingDate?: string | null; recipientId?: string | null }
   ) => {
     await fetch("/api/transactions", {
       method: "PATCH",
@@ -1081,6 +1142,7 @@ export function TransactionTable({ initialCoa, initialFrom, initialTo, initialAc
         <BulkEditBar
           selectedCount={selectedIds.size}
           coaOptions={allCoaOptions}
+          recipients={allRecipients.map((r) => ({ id: r.id, name: r.name }))}
           onApply={handleBulkApply}
           onClear={() => setSelectedIds(new Set())}
         />
