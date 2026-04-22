@@ -1,6 +1,5 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -9,15 +8,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Skeleton } from "@/components/ui/skeleton";
-import { ChevronDown, ListFilter, TrendingDown, TrendingUp } from "lucide-react";
+import { ChevronDown, ListFilter } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
   Area,
@@ -37,12 +28,48 @@ import {
 import type { PerformanceResponse } from "@/app/api/assets/performance/route";
 
 // ---------------------------------------------------------------------------
+// Ledger tokens — mirrors CSS custom properties for Recharts (which needs
+// literal hex) and for non-CSS color decisions.
+// ---------------------------------------------------------------------------
+
+const LM = {
+  bg:        "#0a0a0a",
+  surface:   "#0f0f0f",
+  surface2:  "#141414",
+  border:    "#1f1f1f",
+  border2:   "#2a2a2a",
+  fg:        "#e8e6df",
+  fgMuted:   "#8a8680",
+  fgDim:     "#555049",
+  fgGhost:   "#3a3632",
+  gain:      "#6ba368",
+  gainSoft:  "rgba(107,163,104,0.10)",
+  loss:      "#c84e4e",
+  lossSoft:  "rgba(200,78,78,0.10)",
+  pending:   "#c89c4e",
+} as const;
+
+// Muted earth-tone palette for pie slices — semantic-adjacent, not rainbow
+const LM_PIE = [
+  LM.fg,        // primary neutral
+  LM.gain,      // credit
+  LM.loss,      // debit / risk
+  LM.pending,   // attention
+  LM.fgMuted,   // muted
+  "#7a8b6e",    // muted olive
+  "#9d7a52",    // muted sand
+  "#6b7f89",    // muted slate
+  "#a88260",    // muted ochre
+  LM.fgDim,
+  "#8d6e5a",
+  "#5e7a6a",
+];
+
+// ---------------------------------------------------------------------------
 // Constants & helpers
 // ---------------------------------------------------------------------------
 
-const MONTHS_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-const ASSET_COLORS = ["#3b82f6","#f59e0b","#8b5cf6","#ec4899","#06b6d4","#10b981","#f97316","#ef4444","#14b8a6","#a855f7"];
-const PIE_COLORS   = ["#3b82f6","#f59e0b","#8b5cf6","#ec4899","#06b6d4","#10b981","#f97316","#ef4444","#14b8a6","#a855f7","#84cc16","#6366f1"];
+const MONTHS_PTBR = ["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"];
 const RADIAN = Math.PI / 180;
 
 type Period = "3m" | "6m" | "12m" | "12m_current" | "all";
@@ -52,7 +79,6 @@ function computeRange(period: Period): { from: string | null; to: string | null 
   const now = new Date();
   const pad = (x: number) => String(x).padStart(2, "0");
 
-  // "12m_current" uses current month as "to"; all others use last complete month
   const toYear = period === "12m_current" ? now.getFullYear() : new Date(now.getFullYear(), now.getMonth(), 0).getFullYear();
   const toMo   = period === "12m_current" ? now.getMonth() + 1 : new Date(now.getFullYear(), now.getMonth(), 0).getMonth() + 1;
 
@@ -65,7 +91,7 @@ function computeRange(period: Period): { from: string | null; to: string | null 
 
 function fmtYM(ym: string): string {
   const [y, m] = ym.split("-").map(Number);
-  return `${MONTHS_SHORT[m - 1]} '${String(y).slice(2)}`;
+  return `${MONTHS_PTBR[m - 1]}/${String(y).slice(2)}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -74,6 +100,10 @@ function fmtYM(ym: string): string {
 
 function fmtBrl(val: number): string {
   return val.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 0, maximumFractionDigits: 0 });
+}
+
+function fmtBrlRaw(val: number): string {
+  return val.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function fmtK(val: number): string {
@@ -91,91 +121,201 @@ function fmtLabel(raw: string): string {
   return raw.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
 }
 
+const PERIOD_LABEL: Record<Period, string> = {
+  "3m":          "3M",
+  "6m":          "6M",
+  "12m":         "12M",
+  "12m_current": "12M·AT",
+  "all":         "MAX",
+};
+
 // ---------------------------------------------------------------------------
-// Sub-components
+// Ledger primitives — hairline buttons, KPIs, chart tooltip
 // ---------------------------------------------------------------------------
 
-function StatCard({ label, value, sub, trend }: {
-  label: string; value: string; sub?: string; trend?: "up" | "down" | "neutral";
+function LmFilterButton({
+  active,
+  children,
+  onClick,
+}: {
+  active?:  boolean;
+  children: React.ReactNode;
+  onClick?: () => void;
 }) {
   return (
-    <div className="rounded-lg border bg-card p-4 space-y-1">
-      <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">{label}</p>
-      <div className="flex items-center gap-1.5">
-        {trend === "up"   && <TrendingUp   className="h-4 w-4 text-green-500 shrink-0" />}
-        {trend === "down" && <TrendingDown className="h-4 w-4 text-red-500 shrink-0" />}
-        <p className={
-          "text-xl font-semibold tabular-nums " +
-          (trend === "up"   ? "text-green-600 dark:text-green-400" :
-           trend === "down" ? "text-red-600 dark:text-red-400" : "")
-        }>{value}</p>
+    <button
+      onClick={onClick}
+      className={`flex h-7 items-center gap-1.5 whitespace-nowrap border border-[color:var(--color-lm-border-2)] px-2.5 font-mono text-[10px] tracking-[1px] uppercase ${
+        active
+          ? "bg-[rgba(255,255,255,0.04)] text-[color:var(--color-lm-fg)]"
+          : "text-[color:var(--color-lm-fg-muted)] hover:text-[color:var(--color-lm-fg)]"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function LmKpi({
+  label,
+  value,
+  sub,
+  negative,
+  emphasis,
+  trend,
+}: {
+  label:     string;
+  value:     string;
+  sub?:      string;
+  negative?: boolean;
+  emphasis?: boolean;
+  trend?:    "up" | "down" | "neutral";
+}) {
+  const color = trend === "down" || negative
+    ? LM.loss
+    : trend === "up"
+      ? LM.fg
+      : LM.fg;
+  const subColor = trend === "up"
+    ? LM.gain
+    : trend === "down"
+      ? LM.loss
+      : LM.fgDim;
+
+  return (
+    <div className="min-w-0 border-r border-[color:var(--color-lm-border)] px-3.5 py-3 last:border-r-0">
+      <div className="mb-1.5 text-[9px] uppercase tracking-[1.2px] text-[color:var(--color-lm-fg-dim)]">
+        {label}
       </div>
-      {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
+      <div
+        className="font-mono tabular-nums"
+        style={{ color, fontSize: emphasis ? 22 : 15, letterSpacing: emphasis ? -0.5 : -0.2, lineHeight: 1 }}
+      >
+        {value}
+      </div>
+      {sub && (
+        <div
+          className="mt-1.5 font-mono text-[9px]"
+          style={{ color: subColor }}
+        >
+          {sub}
+        </div>
+      )}
     </div>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Custom Tooltips
-// ---------------------------------------------------------------------------
+// Custom Recharts tooltip — hairline dark surface with mono numbers
+interface RechartsTooltipProps {
+  active?: boolean;
+  payload?: Array<{ value: number; name: string; color?: string; fill?: string; dataKey?: string }>;
+  label?: string | number;
+}
 
-function BalanceTooltip({ active, payload, label }: any) {
+function LedgerTooltip({ active, payload, label }: RechartsTooltipProps) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="rounded-md border bg-background p-3 text-xs shadow-lg space-y-1 min-w-[180px]">
-      <p className="font-semibold text-sm">{label}</p>
-      {payload.map((entry: any, i: number) => (
-        <div key={i} className="flex justify-between gap-4">
-          <span style={{ color: entry.color ?? entry.fill }}>{entry.name}</span>
-          <span className="tabular-nums font-medium">
-            {typeof entry.value === "number"
-              ? entry.name?.toLowerCase().includes("return") || entry.name?.toLowerCase().includes("%")
-                ? fmtPct(entry.value)
-                : fmtBrl(entry.value)
-              : "—"}
-          </span>
-        </div>
-      ))}
+    <div
+      className="min-w-[180px] space-y-0.5 border border-[color:var(--color-lm-border-2)] bg-[color:var(--color-lm-surface)] p-2.5 font-mono text-[11px] text-[color:var(--color-lm-fg)]"
+    >
+      <div className="mb-1 text-[9px] uppercase tracking-[1.2px] text-[color:var(--color-lm-fg-dim)]">
+        {label}
+      </div>
+      {payload.map((entry, i) => {
+        const isPct = entry.name?.toLowerCase().includes("return")
+          || entry.name?.toLowerCase().includes("%")
+          || entry.name?.toLowerCase().includes("retorno");
+        const val = typeof entry.value === "number"
+          ? (isPct ? fmtPct(entry.value) : fmtBrl(entry.value))
+          : "—";
+        return (
+          <div key={i} className="flex justify-between gap-4 tabular-nums">
+            <span style={{ color: entry.color ?? entry.fill }}>{entry.name}</span>
+            <span>{val}</span>
+          </div>
+        );
+      })}
     </div>
   );
 }
 
-function PieSliceLabel({ cx, cy, midAngle, innerRadius, outerRadius, percent }: any) {
+interface PieTooltipPayload {
+  active?: boolean;
+  payload?: Array<{ name: string; value: number }>;
+}
+
+function LedgerPieTooltip({ active, payload }: PieTooltipPayload) {
+  if (!active || !payload?.length) return null;
+  const { name, value } = payload[0];
+  return (
+    <div className="min-w-[160px] space-y-0.5 border border-[color:var(--color-lm-border-2)] bg-[color:var(--color-lm-surface)] p-2.5 font-mono text-[11px] text-[color:var(--color-lm-fg)]">
+      <div className="text-[9px] uppercase tracking-[1.2px] text-[color:var(--color-lm-fg-dim)]">{fmtLabel(name)}</div>
+      <div className="tabular-nums">{fmtBrl(value)}</div>
+    </div>
+  );
+}
+
+interface PieSliceLabelProps {
+  cx?: number;
+  cy?: number;
+  midAngle?: number;
+  innerRadius?: number;
+  outerRadius?: number;
+  percent?: number;
+}
+
+function PieSliceLabel({ cx, cy, midAngle, innerRadius, outerRadius, percent }: PieSliceLabelProps) {
+  if (!cx || !cy || midAngle == null || innerRadius == null || outerRadius == null || !percent) return null;
   if (percent < 0.05) return null;
   const r = innerRadius + (outerRadius - innerRadius) * 0.55;
   const x = cx + r * Math.cos(-midAngle * RADIAN);
   const y = cy + r * Math.sin(-midAngle * RADIAN);
   return (
-    <text x={x} y={y} fill="white" textAnchor="middle" dominantBaseline="central" fontSize={11} fontWeight={600}>
+    <text x={x} y={y} fill={LM.bg} textAnchor="middle" dominantBaseline="central" fontSize={10} fontWeight={600} fontFamily="JetBrains Mono, monospace">
       {`${(percent * 100).toFixed(0)}%`}
     </text>
   );
 }
 
-function PieTooltip({ active, payload }: any) {
-  if (!active || !payload?.length) return null;
-  const { name, value } = payload[0];
-  return (
-    <div className="rounded-md border bg-background p-3 text-xs shadow-lg space-y-0.5 min-w-[160px]">
-      <p className="font-semibold">{fmtLabel(name)}</p>
-      <p className="tabular-nums text-muted-foreground">{fmtBrl(value)}</p>
-    </div>
-  );
-}
-
 function PieLegend({ data, total }: { data: { name: string; value: number }[]; total: number }) {
   return (
-    <div className="mt-3 space-y-1.5">
+    <div className="mt-3 space-y-1">
       {data.map((d, i) => (
-        <div key={d.name} className="flex items-center gap-2 text-xs">
-          <span className="h-2.5 w-2.5 rounded-sm shrink-0" style={{ background: PIE_COLORS[i % PIE_COLORS.length] }} />
-          <span className="flex-1 truncate text-muted-foreground">{fmtLabel(d.name)}</span>
-          <span className="tabular-nums font-medium shrink-0">{fmtBrl(d.value)}</span>
-          <span className="tabular-nums text-muted-foreground/70 shrink-0 w-10 text-right">
+        <div key={d.name} className="flex items-center gap-2 font-mono text-[10px]">
+          <span className="h-2 w-2 shrink-0" style={{ background: LM_PIE[i % LM_PIE.length] }} />
+          <span className="flex-1 truncate text-[color:var(--color-lm-fg-muted)]">{fmtLabel(d.name)}</span>
+          <span className="shrink-0 tabular-nums text-[color:var(--color-lm-fg)]">{fmtBrl(d.value)}</span>
+          <span className="w-10 shrink-0 text-right tabular-nums text-[color:var(--color-lm-fg-dim)]">
             {total > 0 ? `${((d.value / total) * 100).toFixed(1)}%` : "—"}
           </span>
         </div>
       ))}
+    </div>
+  );
+}
+
+function SectionTitle({ children, right }: { children: React.ReactNode; right?: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-2.5 border-b border-[color:var(--color-lm-border)] px-3.5 py-2">
+      <span className="text-[9px] uppercase tracking-[1.2px] text-[color:var(--color-lm-fg-dim)]">
+        {children}
+      </span>
+      <span className="flex-1" />
+      {right}
+    </div>
+  );
+}
+
+function Panel({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={`border border-[color:var(--color-lm-border-2)] bg-[color:var(--color-lm-bg)] ${className ?? ""}`}>
+      {children}
     </div>
   );
 }
@@ -197,10 +337,10 @@ type AssetOption = {
 };
 
 type GroupedAssetOption = {
-  ids:         string[];    // all underlying asset IDs
+  ids:         string[];
   name:        string;
   currency:    string;
-  accountName: string;      // "Account1 +N"
+  accountName: string;
 };
 
 function assetGroupKey(a: AssetOption): string {
@@ -225,7 +365,6 @@ export function AssetPerformanceDashboard() {
   const [loadingAssets,     setLoadingAssets]     = useState(true);
   const [loadingData,       setLoadingData]       = useState(false);
 
-  // Fetch asset list + account list on mount
   useEffect(() => {
     Promise.all([
       fetch("/api/assets").then(r => r.json()),
@@ -237,25 +376,21 @@ export function AssetPerformanceDashboard() {
     }).catch(() => setLoadingAssets(false));
   }, []);
 
-  // Map for quick lookup: assetId → asset metadata
   const allAssetsMap = useMemo(
     () => new Map(allAssets.map(a => [a.id, a])),
     [allAssets]
   );
 
-  // Available classes derived from loaded assets
   const availableClasses = useMemo(
     () => Array.from(new Set(allAssets.map(a => a.assetClass).filter(Boolean) as string[])).sort(),
     [allAssets]
   );
 
-  // Account id → name (needed for grouping)
   const allAccountsMap = useMemo(
     () => new Map(allAccounts.map(a => [a.id, a.name])),
     [allAccounts]
   );
 
-  // Grouped asset options for the asset dropdown
   const groupedAssetOptions = useMemo((): GroupedAssetOption[] => {
     const map = new Map<string, { assets: AssetOption[]; accountNames: string[] }>();
     for (const a of allAssets) {
@@ -276,7 +411,6 @@ export function AssetPerformanceDashboard() {
     })).sort((a, b) => a.name.localeCompare(b.name));
   }, [allAssets, allAccountsMap]);
 
-  // Effective asset IDs considering all active filters (AND logic)
   const effectiveIds = useMemo(() => {
     let filtered = allAssets;
     if (selectedAccountId) filtered = filtered.filter(a => a.accountId === selectedAccountId);
@@ -287,15 +421,13 @@ export function AssetPerformanceDashboard() {
 
   const hasActiveFilters = selectedAccountId != null || selectedClasses.length > 0 || selectedIds.length > 0;
 
-  // Fetch performance data when period or filters change
   useEffect(() => {
-    if (loadingAssets) return; // wait for asset list first
+    if (loadingAssets) return;
     setLoadingData(true);
     const { from, to } = computeRange(period);
     const params = new URLSearchParams();
     if (from) params.set("from", from);
     if (to)   params.set("to",   to);
-    // Send effective IDs only when it's a subset of all assets
     if (hasActiveFilters && effectiveIds.length < allAssets.length) {
       params.set("assetIds", effectiveIds.join(","));
     }
@@ -304,9 +436,6 @@ export function AssetPerformanceDashboard() {
       .then((d: PerformanceResponse) => { setData(d); setLoadingData(false); })
       .catch(() => setLoadingData(false));
   }, [period, effectiveIds, hasActiveFilters, allAssets.length, loadingAssets]);
-
-  const toggleAsset = (id: string) =>
-    setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
 
   const toggleClass = (cls: string) =>
     setSelectedClasses(prev => prev.includes(cls) ? prev.filter(x => x !== cls) : [...prev, cls]);
@@ -321,8 +450,8 @@ export function AssetPerformanceDashboard() {
       label:                  m.label,
       month:                  m.month,
       balance:                m.balance,
-      contributions:          m.contributions > 0 ? m.contributions : null,
-      withdrawals:            m.withdrawals   > 0 ? -m.withdrawals  : null,
+      contributions:          m.contributions > 0 ?  m.contributions : null,
+      withdrawals:            m.withdrawals   > 0 ? -m.withdrawals   : null,
       netCashFlow:            m.contributions > 0 || m.withdrawals > 0 ? m.contributions - m.withdrawals : null,
       returnPct:              m.returnPct,
       cumulativeReturnPct:    m.cumulativeReturnPct,
@@ -331,14 +460,12 @@ export function AssetPerformanceDashboard() {
     }));
   }, [data]);
 
-  // Latest month key for pie chart snapshot
   const latestKey = useMemo(() => {
     if (!data?.to) return null;
     const [y, m] = data.to.split("-").map(Number);
     return `${y}:${m}`;
   }, [data]);
 
-  // Pie: balance by asset class
   const pieByClass = useMemo(() => {
     if (!data || !latestKey) return [];
     const map = new Map<string, number>();
@@ -351,7 +478,6 @@ export function AssetPerformanceDashboard() {
     return Array.from(map.entries()).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
   }, [data, latestKey, allAssetsMap]);
 
-  // Pie: balance by risk factor
   const pieByRisk = useMemo(() => {
     if (!data || !latestKey) return [];
     const map = new Map<string, number>();
@@ -364,7 +490,6 @@ export function AssetPerformanceDashboard() {
     return Array.from(map.entries()).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
   }, [data, latestKey, allAssetsMap]);
 
-  // Pie: balance by account
   const pieByAccount = useMemo(() => {
     if (!data || !latestKey) return [];
     const map = new Map<string, number>();
@@ -381,46 +506,65 @@ export function AssetPerformanceDashboard() {
   const pieRiskTotal    = useMemo(() => pieByRisk.reduce((s, d) => s + d.value, 0),    [pieByRisk]);
   const pieAccountTotal = useMemo(() => pieByAccount.reduce((s, d) => s + d.value, 0), [pieByAccount]);
 
-  // -------------------------------------------------------------------------
-  // Summary card values
-  // -------------------------------------------------------------------------
+  // Summary values
+  const ytd    = data?.ytd;
+  const retPct = ytd?.returnPct;
+  const twrPct = ytd?.twrReturnPct;
+  const pnl    = ytd?.pnl;
 
-  const ytd      = data?.ytd;
-  const retPct   = ytd?.returnPct;
-  const twrPct   = ytd?.twrReturnPct;
-  const pnl      = ytd?.pnl;
-  const retTrend: "up" | "down" | "neutral" =
-    retPct == null ? "neutral" : retPct >= 0 ? "up" : "down";
-  const twrTrend: "up" | "down" | "neutral" =
-    twrPct == null ? "neutral" : twrPct >= 0 ? "up" : "down";
-
-  // Active filter count badge
   const activeFilterCount =
     (selectedAccountId ? 1 : 0) + selectedClasses.length + selectedIds.length;
+
+  // Most recent month's Δ (vs prior balance) for hero sub-line
+  const lastMonth = useMemo(() => {
+    if (!data?.months) return null;
+    const withBalance = data.months.filter(m => m.balance != null);
+    return withBalance.length > 0 ? withBalance[withBalance.length - 1] : null;
+  }, [data]);
+  const lastMonthDelta =
+    lastMonth && lastMonth.balance != null && lastMonth.prevBalance != null
+      ? lastMonth.balance - lastMonth.prevBalance
+      : null;
+  const lastMonthDeltaPct =
+    lastMonth && lastMonth.balance != null && lastMonth.prevBalance && lastMonth.prevBalance > 0
+      ? ((lastMonth.balance - lastMonth.prevBalance) / lastMonth.prevBalance) * 100
+      : null;
 
   // -------------------------------------------------------------------------
   // Render
   // -------------------------------------------------------------------------
 
   return (
-    <div className="space-y-5">
-      {/* ---- Filters ---- */}
-      <div className="flex flex-wrap items-center gap-3">
-        {/* Period */}
-        <Select value={period} onValueChange={v => setPeriod(v as Period)}>
-          <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="3m">Last 3 months</SelectItem>
-            <SelectItem value="6m">Last 6 months</SelectItem>
-            <SelectItem value="12m">Last 12 months</SelectItem>
-            <SelectItem value="12m_current">Last 12 months (incl. current)</SelectItem>
-            <SelectItem value="all">All time</SelectItem>
-          </SelectContent>
-        </Select>
+    <div className="flex h-full min-h-0 flex-col">
+      {/* ── Filter prompt ───────────────────────────────────────────────── */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-[color:var(--color-lm-border)] bg-[color:var(--color-lm-bg)] px-3.5 py-2 font-mono text-[11px]">
+        <span className="text-[color:var(--color-lm-gain)]">$</span>
+        <span className="text-[color:var(--color-lm-fg)]">performance</span>
+
+        {/* Period segmented */}
+        <div className="flex border border-[color:var(--color-lm-border-2)]">
+          {(Object.keys(PERIOD_LABEL) as Period[]).map((p, i, arr) => {
+            const active = period === p;
+            return (
+              <button
+                key={p}
+                onClick={() => setPeriod(p)}
+                className="px-2.5 py-0.5 font-mono text-[10px] tracking-[1px] uppercase"
+                style={{
+                  color: active ? LM.bg : LM.fgMuted,
+                  background: active ? LM.fg : "transparent",
+                  borderRight: i < arr.length - 1 ? `1px solid ${LM.border2}` : "none",
+                }}
+              >
+                {PERIOD_LABEL[p]}
+              </button>
+            );
+          })}
+        </div>
 
         {data?.from && data?.to && (
-          <span className="text-xs text-muted-foreground">
-            {fmtYM(data.from)} – {fmtYM(data.to)}
+          <span className="text-[color:var(--color-lm-fg-dim)]">
+            {fmtYM(data.from)} → {fmtYM(data.to)}
           </span>
         )}
 
@@ -428,16 +572,22 @@ export function AssetPerformanceDashboard() {
         {!loadingAssets && allAccounts.length > 0 && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" className="h-9 gap-1.5 text-sm font-normal">
+              <button
+                className={`flex h-7 items-center gap-1.5 whitespace-nowrap border border-[color:var(--color-lm-border-2)] px-2.5 font-mono text-[10px] tracking-[1px] uppercase ${
+                  selectedAccountId
+                    ? "bg-[rgba(255,255,255,0.04)] text-[color:var(--color-lm-fg)]"
+                    : "text-[color:var(--color-lm-fg-muted)] hover:text-[color:var(--color-lm-fg)]"
+                }`}
+              >
                 {selectedAccountId
-                  ? <ListFilter className="h-3.5 w-3.5 text-primary" />
-                  : <ChevronDown className="h-3.5 w-3.5 opacity-50" />}
+                  ? <ListFilter className="h-3 w-3" />
+                  : <ChevronDown className="h-3 w-3 opacity-50" />}
                 {selectedAccountId
-                  ? (allAccounts.find(a => a.id === selectedAccountId)?.name ?? "Account")
-                  : "Account"}
-              </Button>
+                  ? (allAccounts.find(a => a.id === selectedAccountId)?.name ?? "conta")
+                  : "conta"}
+              </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="min-w-[220px] max-h-80 overflow-y-auto">
+            <DropdownMenuContent align="start" className="min-w-[220px] max-h-80 overflow-y-auto border-[color:var(--color-lm-border-2)] bg-[color:var(--color-lm-surface)] font-mono text-[11px]">
               {allAccounts.map(acc => (
                 <DropdownMenuCheckboxItem
                   key={acc.id}
@@ -451,8 +601,8 @@ export function AssetPerformanceDashboard() {
               {selectedAccountId && (
                 <>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem className="justify-center text-xs text-muted-foreground" onSelect={() => setSelectedAccountId(null)}>
-                    Clear filter
+                  <DropdownMenuItem className="justify-center text-[10px] uppercase tracking-[1px] text-[color:var(--color-lm-fg-muted)]" onSelect={() => setSelectedAccountId(null)}>
+                    limpar
                   </DropdownMenuItem>
                 </>
               )}
@@ -464,19 +614,25 @@ export function AssetPerformanceDashboard() {
         {!loadingAssets && availableClasses.length > 0 && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" className="h-9 gap-1.5 text-sm font-normal">
+              <button
+                className={`flex h-7 items-center gap-1.5 whitespace-nowrap border border-[color:var(--color-lm-border-2)] px-2.5 font-mono text-[10px] tracking-[1px] uppercase ${
+                  selectedClasses.length > 0
+                    ? "bg-[rgba(255,255,255,0.04)] text-[color:var(--color-lm-fg)]"
+                    : "text-[color:var(--color-lm-fg-muted)] hover:text-[color:var(--color-lm-fg)]"
+                }`}
+              >
                 {selectedClasses.length > 0
-                  ? <ListFilter className="h-3.5 w-3.5 text-primary" />
-                  : <ChevronDown className="h-3.5 w-3.5 opacity-50" />}
-                Class
+                  ? <ListFilter className="h-3 w-3" />
+                  : <ChevronDown className="h-3 w-3 opacity-50" />}
+                classe
                 {selectedClasses.length > 0 && (
-                  <span className="rounded-full bg-primary/10 px-1.5 text-[10px] font-semibold text-primary leading-4">
+                  <span className="bg-[color:var(--color-lm-fg)] px-1 text-[9px] font-semibold text-[color:var(--color-lm-bg)] leading-[14px]">
                     {selectedClasses.length}
                   </span>
                 )}
-              </Button>
+              </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="min-w-[220px] max-h-80 overflow-y-auto">
+            <DropdownMenuContent align="start" className="min-w-[220px] max-h-80 overflow-y-auto border-[color:var(--color-lm-border-2)] bg-[color:var(--color-lm-surface)] font-mono text-[11px]">
               {availableClasses.map(cls => (
                 <DropdownMenuCheckboxItem
                   key={cls}
@@ -490,8 +646,8 @@ export function AssetPerformanceDashboard() {
               {selectedClasses.length > 0 && (
                 <>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem className="justify-center text-xs text-muted-foreground" onSelect={() => setSelectedClasses([])}>
-                    Clear filter
+                  <DropdownMenuItem className="justify-center text-[10px] uppercase tracking-[1px] text-[color:var(--color-lm-fg-muted)]" onSelect={() => setSelectedClasses([])}>
+                    limpar
                   </DropdownMenuItem>
                 </>
               )}
@@ -499,23 +655,29 @@ export function AssetPerformanceDashboard() {
           </DropdownMenu>
         )}
 
-        {/* Per-asset filter (grouped) */}
+        {/* Per-asset filter */}
         {!loadingAssets && groupedAssetOptions.length > 0 && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" className="h-9 gap-1.5 text-sm font-normal">
+              <button
+                className={`flex h-7 items-center gap-1.5 whitespace-nowrap border border-[color:var(--color-lm-border-2)] px-2.5 font-mono text-[10px] tracking-[1px] uppercase ${
+                  selectedIds.length > 0
+                    ? "bg-[rgba(255,255,255,0.04)] text-[color:var(--color-lm-fg)]"
+                    : "text-[color:var(--color-lm-fg-muted)] hover:text-[color:var(--color-lm-fg)]"
+                }`}
+              >
                 {selectedIds.length > 0
-                  ? <ListFilter className="h-3.5 w-3.5 text-primary" />
-                  : <ChevronDown className="h-3.5 w-3.5 opacity-50" />}
-                Assets
+                  ? <ListFilter className="h-3 w-3" />
+                  : <ChevronDown className="h-3 w-3 opacity-50" />}
+                ativos
                 {selectedIds.length > 0 && (
-                  <span className="rounded-full bg-primary/10 px-1.5 text-[10px] font-semibold text-primary leading-4">
+                  <span className="bg-[color:var(--color-lm-fg)] px-1 text-[9px] font-semibold text-[color:var(--color-lm-bg)] leading-[14px]">
                     {groupedAssetOptions.filter(g => g.ids.every(id => selectedIds.includes(id))).length}
                   </span>
                 )}
-              </Button>
+              </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="min-w-[260px] max-h-80 overflow-y-auto">
+            <DropdownMenuContent align="start" className="min-w-[260px] max-h-80 overflow-y-auto border-[color:var(--color-lm-border-2)] bg-[color:var(--color-lm-surface)] font-mono text-[11px]">
               {groupedAssetOptions.map(g => {
                 const allChecked = g.ids.every(id => selectedIds.includes(id));
                 const toggle = () => {
@@ -533,9 +695,9 @@ export function AssetPerformanceDashboard() {
                     onSelect={e => e.preventDefault()}
                   >
                     <span className="flex-1 truncate">{g.name}</span>
-                    <span className="ml-2 text-[10px] text-muted-foreground font-mono">{g.currency}</span>
+                    <span className="ml-2 text-[9px] text-[color:var(--color-lm-fg-muted)]">{g.currency}</span>
                     {g.ids.length > 1 && (
-                      <span className="ml-1 text-[10px] text-muted-foreground">{g.accountName}</span>
+                      <span className="ml-1 text-[9px] text-[color:var(--color-lm-fg-dim)]">{g.accountName}</span>
                     )}
                   </DropdownMenuCheckboxItem>
                 );
@@ -543,8 +705,8 @@ export function AssetPerformanceDashboard() {
               {selectedIds.length > 0 && (
                 <>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem className="justify-center text-xs text-muted-foreground" onSelect={() => setSelectedIds([])}>
-                    Clear filter (show all)
+                  <DropdownMenuItem className="justify-center text-[10px] uppercase tracking-[1px] text-[color:var(--color-lm-fg-muted)]" onSelect={() => setSelectedIds([])}>
+                    limpar
                   </DropdownMenuItem>
                 </>
               )}
@@ -552,414 +714,502 @@ export function AssetPerformanceDashboard() {
           </DropdownMenu>
         )}
 
-        {/* Clear all filters */}
         {activeFilterCount > 0 && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-9 text-xs text-muted-foreground"
+          <LmFilterButton
             onClick={() => { setSelectedAccountId(null); setSelectedClasses([]); setSelectedIds([]); }}
           >
-            Clear all
-          </Button>
+            limpar tudo
+          </LmFilterButton>
         )}
 
+        <span className="flex-1" />
+
         {data && (
-          <span className="text-xs text-muted-foreground">
-            {data.assetCount} asset{data.assetCount !== 1 ? "s" : ""}
-            {activeFilterCount > 0 ? " selected" : " total"}
+          <span className="text-[color:var(--color-lm-fg-muted)]">
+            {data.assetCount} ativo{data.assetCount !== 1 ? "s" : ""}
+            {activeFilterCount > 0 ? " · filtrado" : ""}
           </span>
         )}
       </div>
 
-      {/* ---- Loading skeleton ---- */}
-      {loadingData && (
-        <div className="space-y-3">
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
-            {Array.from({ length: 7 }).map((_, i) => <Skeleton key={i} className="h-20" />)}
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <Skeleton className="h-64" />
-            <Skeleton className="h-64" />
-          </div>
-          <Skeleton className="h-72 w-full" />
-          <div className="grid grid-cols-2 gap-3">
-            <Skeleton className="h-56" />
-            <Skeleton className="h-56" />
-          </div>
-        </div>
-      )}
-
-      {/* ---- No data ---- */}
-      {!loadingData && data && data.assetCount === 0 && (
-        <p className="py-12 text-center text-muted-foreground text-sm">
-          No asset balance data found for the selected period.
-        </p>
-      )}
-
-      {/* ---- Dashboard ---- */}
-      {!loadingData && data && data.assetCount > 0 && (
-        <>
-          {/* Summary cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
-            <StatCard
-              label="Current Balance"
-              value={ytd?.currentBalance != null ? fmtBrl(ytd.currentBalance) : "—"}
-              sub="BRL equivalent"
-            />
-            <StatCard
-              label="Simple Return"
-              value={retPct != null ? fmtPct(retPct) : "—"}
-              sub="P&L / start balance"
-              trend={retTrend}
-            />
-            <StatCard
-              label="TWR"
-              value={twrPct != null ? fmtPct(twrPct) : "—"}
-              sub="Time-weighted"
-              trend={twrTrend}
-            />
-            <StatCard
-              label="P&L"
-              value={pnl != null ? fmtBrl(pnl) : "—"}
-              sub="Profit / loss"
-              trend={retTrend}
-            />
-            <StatCard
-              label="Contributions"
-              value={ytd ? fmtBrl(ytd.contributions) : "—"}
-              sub="Money invested"
-            />
-            <StatCard
-              label="Withdrawals"
-              value={ytd ? fmtBrl(ytd.withdrawals) : "—"}
-              sub="Money redeemed"
-            />
-            <StatCard
-              label="Income"
-              value={ytd ? fmtBrl(ytd.income) : "—"}
-              sub="Dividends / interest"
-            />
-          </div>
-
-          {/* Balance + Cash Flow chart */}
-          <div className="rounded-lg border bg-card p-4">
-            <h3 className="text-sm font-semibold mb-4">Balance Evolution &amp; Cash Flows</h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <ComposedChart data={chartData} margin={{ top: 5, right: 65, left: 10, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="gradBalance" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%"  stopColor="#3b82f6" stopOpacity={0.25} />
-                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}    />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.5)" />
-                <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                <YAxis yAxisId="bal" orientation="left"  tickFormatter={fmtK} tick={{ fontSize: 11 }} width={62} />
-                <YAxis yAxisId="cf"  orientation="right" tickFormatter={fmtK} tick={{ fontSize: 11 }} width={62} />
-                <Tooltip content={<BalanceTooltip />} />
-                <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Area
-                  yAxisId="bal"
-                  type="monotone"
-                  dataKey="balance"
-                  name="Balance (BRL)"
-                  fill="url(#gradBalance)"
-                  stroke="#3b82f6"
-                  strokeWidth={2}
-                  dot={false}
-                  connectNulls={false}
-                />
-                <Bar yAxisId="cf" dataKey="contributions" name="Contributions" maxBarSize={24} fill="#22c55e" opacity={0.8} />
-                <Bar yAxisId="cf" dataKey="withdrawals"   name="Withdrawals"   maxBarSize={24} fill="#ef4444" opacity={0.8} />
-              </ComposedChart>
-            </ResponsiveContainer>
-          </div>
-
-          {/* Return charts side-by-side */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="rounded-lg border bg-card p-4">
-              <h3 className="text-sm font-semibold mb-4">Monthly Return %</h3>
-              <ResponsiveContainer width="100%" height={220}>
-                <ComposedChart data={chartData} margin={{ top: 5, right: 10, left: 5, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.5)" />
-                  <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                  <YAxis tickFormatter={v => `${v.toFixed(1)}%`} tick={{ fontSize: 11 }} width={52} />
-                  <Tooltip content={<BalanceTooltip />} />
-                  <ReferenceLine y={0} stroke="hsl(var(--border))" strokeWidth={1.5} />
-                  <Bar dataKey="returnPct" name="Return %" maxBarSize={28} radius={[2, 2, 0, 0]}>
-                    {chartData.map((d, i) => (
-                      <Cell key={i} fill={(d.returnPct ?? 0) >= 0 ? "#22c55e" : "#ef4444"} opacity={0.85} />
-                    ))}
-                  </Bar>
-                </ComposedChart>
-              </ResponsiveContainer>
+      {/* ── Scrollable content ────────────────────────────────────────── */}
+      <div className="min-h-0 flex-1 overflow-auto">
+        {/* Loading */}
+        {loadingData && (
+          <div className="space-y-3 p-3.5">
+            <div className="grid grid-cols-7 gap-px bg-[color:var(--color-lm-border)]">
+              {Array.from({ length: 7 }).map((_, i) => (
+                <div key={i} className="h-20 animate-pulse bg-[rgba(255,255,255,0.02)]" />
+              ))}
             </div>
-
-            <div className="rounded-lg border bg-card p-4">
-              <h3 className="text-sm font-semibold mb-4">Cumulative Return</h3>
-              <ResponsiveContainer width="100%" height={220}>
-                <ComposedChart data={chartData} margin={{ top: 5, right: 10, left: 5, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="gradCum" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%"  stopColor="#8b5cf6" stopOpacity={0.2} />
-                      <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}   />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.5)" />
-                  <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                  <YAxis tickFormatter={v => `${v.toFixed(1)}%`} tick={{ fontSize: 11 }} width={52} />
-                  <Tooltip content={<BalanceTooltip />} />
-                  <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <ReferenceLine y={0} stroke="hsl(var(--border))" strokeWidth={1.5} />
-                  <Area
-                    type="monotone"
-                    dataKey="cumulativeReturnPct"
-                    name="Simple Return %"
-                    stroke="#8b5cf6"
-                    fill="url(#gradCum)"
-                    strokeWidth={2}
-                    dot={{ r: 3, fill: "#8b5cf6" }}
-                    connectNulls={false}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="twrCumulativeReturnPct"
-                    name="TWR %"
-                    stroke="#f59e0b"
-                    fill="none"
-                    strokeWidth={2}
-                    strokeDasharray="5 3"
-                    dot={{ r: 2, fill: "#f59e0b" }}
-                    connectNulls={false}
-                  />
-                </ComposedChart>
-              </ResponsiveContainer>
+            <div className="h-64 animate-pulse bg-[rgba(255,255,255,0.02)]" />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="h-56 animate-pulse bg-[rgba(255,255,255,0.02)]" />
+              <div className="h-56 animate-pulse bg-[rgba(255,255,255,0.02)]" />
             </div>
           </div>
+        )}
 
-          {/* Monthly breakdown table */}
-          <div className="rounded-lg border bg-card overflow-hidden">
-            <div className="px-4 py-3 border-b">
-              <h3 className="text-sm font-semibold">Monthly Breakdown</h3>
+        {/* No data */}
+        {!loadingData && data && data.assetCount === 0 && (
+          <div className="flex h-48 items-center justify-center text-[11px] text-[color:var(--color-lm-fg-muted)]">
+            nenhum dado de saldo encontrado no período selecionado.
+          </div>
+        )}
+
+        {/* Dashboard */}
+        {!loadingData && data && data.assetCount > 0 && (
+          <>
+            {/* ── Hero + KPI band ──────────────────────────────────────── */}
+            <div
+              className="grid border-b border-[color:var(--color-lm-border-2)]"
+              style={{ gridTemplateColumns: "1.5fr repeat(6, 1fr)" }}
+            >
+              {/* Hero: Patrimônio líquido */}
+              <div className="min-w-0 border-r border-[color:var(--color-lm-border)] px-3.5 py-3">
+                <div className="mb-1.5 text-[9px] uppercase tracking-[1.2px] text-[color:var(--color-lm-fg-dim)]">
+                  Patrimônio líquido
+                </div>
+                <div
+                  className="font-mono tabular-nums"
+                  style={{ color: LM.fg, fontSize: 24, letterSpacing: -0.5, lineHeight: 1 }}
+                >
+                  <span className="mr-1 text-[14px] text-[color:var(--color-lm-fg-dim)]">R$</span>
+                  {ytd?.currentBalance != null ? fmtBrlRaw(ytd.currentBalance) : "—"}
+                </div>
+                {lastMonthDelta != null && (
+                  <div className="mt-1.5 flex items-center gap-1.5 font-mono text-[10px] tabular-nums">
+                    <span style={{ color: lastMonthDelta >= 0 ? LM.gain : LM.loss }}>
+                      {lastMonthDelta >= 0 ? "↑" : "↓"} {lastMonthDelta >= 0 ? "+" : "−"}R$ {fmtBrlRaw(Math.abs(lastMonthDelta))}
+                    </span>
+                    {lastMonthDeltaPct != null && (
+                      <span className="text-[color:var(--color-lm-fg-dim)]">
+                        {lastMonth?.label ?? "último mês"} · {fmtPct(lastMonthDeltaPct)}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <LmKpi
+                label="Retorno simples"
+                value={retPct != null ? fmtPct(retPct) : "—"}
+                sub="P&L ÷ saldo inicial"
+                trend={retPct == null ? "neutral" : retPct >= 0 ? "up" : "down"}
+                emphasis
+              />
+              <LmKpi
+                label="TWR"
+                value={twrPct != null ? fmtPct(twrPct) : "—"}
+                sub="tempo-ponderado"
+                trend={twrPct == null ? "neutral" : twrPct >= 0 ? "up" : "down"}
+              />
+              <LmKpi
+                label="P&L"
+                value={pnl != null ? `${pnl >= 0 ? "+" : "−"}R$ ${fmtBrlRaw(Math.abs(pnl))}` : "—"}
+                sub="lucro / prejuízo"
+                trend={pnl == null ? "neutral" : pnl >= 0 ? "up" : "down"}
+              />
+              <LmKpi
+                label="Aportes"
+                value={ytd ? fmtBrl(ytd.contributions) : "—"}
+                sub="total investido"
+              />
+              <LmKpi
+                label="Resgates"
+                value={ytd ? fmtBrl(ytd.withdrawals) : "—"}
+                sub="total resgatado"
+                negative={ytd != null && ytd.withdrawals > 0}
+              />
+              <LmKpi
+                label="Proventos"
+                value={ytd ? fmtBrl(ytd.income) : "—"}
+                sub="juros / dividendos"
+              />
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm border-collapse">
-                <thead>
-                  <tr className="bg-muted/40">
-                    <th className="px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground whitespace-nowrap">Month</th>
-                    <th className="px-4 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground whitespace-nowrap">Balance</th>
-                    <th className="px-4 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground whitespace-nowrap">vs Prior</th>
-                    <th className="px-4 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground whitespace-nowrap">Contributions</th>
-                    <th className="px-4 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground whitespace-nowrap">Withdrawals</th>
-                    <th className="px-4 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground whitespace-nowrap">Income</th>
-                    <th className="px-4 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground whitespace-nowrap">P&amp;L</th>
-                    <th className="px-4 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground whitespace-nowrap">Return %</th>
-                    <th className="px-4 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground whitespace-nowrap">Cumulative</th>
-                    <th className="px-4 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground whitespace-nowrap">TWR Cum.</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.months
-                    .filter(m => m.balance !== null || m.contributions > 0 || m.withdrawals > 0 || m.income > 0)
-                    .map(m => {
-                      const hasReturn = m.returnPct !== null;
-                      return (
-                        <tr key={`${m.year}:${m.month}`} className="border-t hover:bg-muted/20 transition-colors">
-                          <td className="px-4 py-2.5 font-medium">{m.label}</td>
-                          <td className="px-4 py-2.5 text-right tabular-nums">
-                            {m.balance != null ? fmtBrl(m.balance) : <span className="text-muted-foreground/50">—</span>}
-                          </td>
-                          <td className="px-4 py-2.5 text-right tabular-nums text-xs">
-                            {m.balance != null && m.prevBalance != null
-                              ? (() => {
+
+            {/* ── Balance + Cash Flow chart ────────────────────────────── */}
+            <Panel className="mx-3.5 mt-3.5">
+              <SectionTitle>NAV · saldo e fluxos</SectionTitle>
+              <div className="px-3.5 pb-3 pt-4">
+                <ResponsiveContainer width="100%" height={260}>
+                  <ComposedChart data={chartData} margin={{ top: 5, right: 55, left: 5, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="gradBalance" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%"  stopColor={LM.fg} stopOpacity={0.15} />
+                        <stop offset="95%" stopColor={LM.fg} stopOpacity={0}    />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="2 4" stroke={LM.border} vertical={false} />
+                    <XAxis
+                      dataKey="label"
+                      tick={{ fontSize: 10, fontFamily: "JetBrains Mono, monospace", fill: LM.fgMuted }}
+                      axisLine={{ stroke: LM.border }}
+                      tickLine={{ stroke: LM.border }}
+                    />
+                    <YAxis
+                      yAxisId="bal"
+                      orientation="left"
+                      tickFormatter={fmtK}
+                      tick={{ fontSize: 10, fontFamily: "JetBrains Mono, monospace", fill: LM.fgMuted }}
+                      axisLine={{ stroke: LM.border }}
+                      tickLine={{ stroke: LM.border }}
+                      width={56}
+                    />
+                    <YAxis
+                      yAxisId="cf"
+                      orientation="right"
+                      tickFormatter={fmtK}
+                      tick={{ fontSize: 10, fontFamily: "JetBrains Mono, monospace", fill: LM.fgMuted }}
+                      axisLine={{ stroke: LM.border }}
+                      tickLine={{ stroke: LM.border }}
+                      width={52}
+                    />
+                    <Tooltip content={<LedgerTooltip />} cursor={{ fill: "rgba(255,255,255,0.02)" }} />
+                    <Legend
+                      wrapperStyle={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, color: LM.fgMuted, letterSpacing: 1, textTransform: "uppercase" }}
+                      iconSize={8}
+                      iconType="square"
+                    />
+                    <Area
+                      yAxisId="bal"
+                      type="monotone"
+                      dataKey="balance"
+                      name="saldo (BRL)"
+                      fill="url(#gradBalance)"
+                      stroke={LM.fg}
+                      strokeWidth={1}
+                      dot={false}
+                      connectNulls={false}
+                    />
+                    <Bar yAxisId="cf" dataKey="contributions" name="aportes"  maxBarSize={18} fill={LM.gain} opacity={0.85} />
+                    <Bar yAxisId="cf" dataKey="withdrawals"   name="resgates" maxBarSize={18} fill={LM.loss} opacity={0.85} />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+            </Panel>
+
+            {/* ── Return charts ────────────────────────────────────────── */}
+            <div className="grid grid-cols-1 gap-3.5 px-3.5 pt-3.5 md:grid-cols-2">
+              <Panel>
+                <SectionTitle>Retorno mensal</SectionTitle>
+                <div className="px-3.5 pb-3 pt-4">
+                  <ResponsiveContainer width="100%" height={200}>
+                    <ComposedChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="2 4" stroke={LM.border} vertical={false} />
+                      <XAxis
+                        dataKey="label"
+                        tick={{ fontSize: 10, fontFamily: "JetBrains Mono, monospace", fill: LM.fgMuted }}
+                        axisLine={{ stroke: LM.border }}
+                        tickLine={{ stroke: LM.border }}
+                      />
+                      <YAxis
+                        tickFormatter={v => `${v.toFixed(1)}%`}
+                        tick={{ fontSize: 10, fontFamily: "JetBrains Mono, monospace", fill: LM.fgMuted }}
+                        axisLine={{ stroke: LM.border }}
+                        tickLine={{ stroke: LM.border }}
+                        width={48}
+                      />
+                      <Tooltip content={<LedgerTooltip />} cursor={{ fill: "rgba(255,255,255,0.02)" }} />
+                      <ReferenceLine y={0} stroke={LM.border2} strokeWidth={1} />
+                      <Bar dataKey="returnPct" name="retorno %" maxBarSize={22}>
+                        {chartData.map((d, i) => (
+                          <Cell key={i} fill={(d.returnPct ?? 0) >= 0 ? LM.fg : LM.loss} opacity={0.9} />
+                        ))}
+                      </Bar>
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+              </Panel>
+
+              <Panel>
+                <SectionTitle>Retorno acumulado</SectionTitle>
+                <div className="px-3.5 pb-3 pt-4">
+                  <ResponsiveContainer width="100%" height={200}>
+                    <ComposedChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="gradCum" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%"  stopColor={LM.fg} stopOpacity={0.12} />
+                          <stop offset="95%" stopColor={LM.fg} stopOpacity={0}    />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="2 4" stroke={LM.border} vertical={false} />
+                      <XAxis
+                        dataKey="label"
+                        tick={{ fontSize: 10, fontFamily: "JetBrains Mono, monospace", fill: LM.fgMuted }}
+                        axisLine={{ stroke: LM.border }}
+                        tickLine={{ stroke: LM.border }}
+                      />
+                      <YAxis
+                        tickFormatter={v => `${v.toFixed(1)}%`}
+                        tick={{ fontSize: 10, fontFamily: "JetBrains Mono, monospace", fill: LM.fgMuted }}
+                        axisLine={{ stroke: LM.border }}
+                        tickLine={{ stroke: LM.border }}
+                        width={48}
+                      />
+                      <Tooltip content={<LedgerTooltip />} cursor={{ stroke: LM.border2 }} />
+                      <Legend
+                        wrapperStyle={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, color: LM.fgMuted, letterSpacing: 1, textTransform: "uppercase" }}
+                        iconSize={8}
+                        iconType="square"
+                      />
+                      <ReferenceLine y={0} stroke={LM.border2} strokeWidth={1} />
+                      <Area
+                        type="monotone"
+                        dataKey="cumulativeReturnPct"
+                        name="simples %"
+                        stroke={LM.fg}
+                        fill="url(#gradCum)"
+                        strokeWidth={1}
+                        dot={{ r: 2, fill: LM.fg, stroke: LM.fg }}
+                        connectNulls={false}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="twrCumulativeReturnPct"
+                        name="twr %"
+                        stroke={LM.pending}
+                        fill="none"
+                        strokeWidth={1}
+                        strokeDasharray="4 2"
+                        dot={{ r: 2, fill: LM.pending, stroke: LM.pending }}
+                        connectNulls={false}
+                      />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+              </Panel>
+            </div>
+
+            {/* ── Monthly breakdown ─────────────────────────────────── */}
+            <div className="mx-3.5 mt-3.5 border border-[color:var(--color-lm-border-2)]">
+              <SectionTitle>Breakdown mensal</SectionTitle>
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse font-mono text-[11px]">
+                  <thead>
+                    <tr className="bg-[color:var(--color-lm-surface)]">
+                      {["Mês", "Saldo", "vs Anterior", "Aportes", "Resgates", "Proventos", "P&L", "Retorno %", "Acumulado", "TWR Acum."].map((h, i) => (
+                        <th
+                          key={i}
+                          className="whitespace-nowrap border-b border-[color:var(--color-lm-border-2)] px-3 py-1.5 text-[9px] uppercase tracking-[1.2px] text-[color:var(--color-lm-fg-dim)]"
+                          style={{ textAlign: i === 0 ? "left" : "right" }}
+                        >
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.months
+                      .filter(m => m.balance !== null || m.contributions > 0 || m.withdrawals > 0 || m.income > 0)
+                      .map((m, rowIdx) => {
+                        const hasReturn = m.returnPct !== null;
+                        const cellBase = "px-3 py-1 tabular-nums whitespace-nowrap";
+                        return (
+                          <tr
+                            key={`${m.year}:${m.month}`}
+                            className="border-b border-[color:var(--color-lm-border)]"
+                            style={{ background: rowIdx % 2 === 1 ? "rgba(255,255,255,0.012)" : "transparent" }}
+                          >
+                            <td className={`${cellBase} text-left text-[color:var(--color-lm-fg)]`}>{m.label}</td>
+                            <td className={`${cellBase} text-right`} style={{ color: m.balance != null ? LM.fg : LM.fgGhost }}>
+                              {m.balance != null ? fmtBrl(m.balance) : "—"}
+                            </td>
+                            <td className={`${cellBase} text-right`}>
+                              {m.balance != null && m.prevBalance != null ? (
+                                (() => {
                                   const diff = m.balance - m.prevBalance;
                                   return (
-                                    <span className={diff >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}>
+                                    <span style={{ color: diff >= 0 ? LM.fg : LM.loss }}>
                                       {diff >= 0 ? "+" : ""}{fmtBrl(diff)}
                                     </span>
                                   );
                                 })()
-                              : <span className="text-muted-foreground/50">—</span>}
-                          </td>
-                          <td className="px-4 py-2.5 text-right tabular-nums text-green-700 dark:text-green-400">
-                            {m.contributions > 0 ? fmtBrl(m.contributions) : <span className="text-muted-foreground/30">—</span>}
-                          </td>
-                          <td className="px-4 py-2.5 text-right tabular-nums text-red-600 dark:text-red-400">
-                            {m.withdrawals > 0 ? fmtBrl(m.withdrawals) : <span className="text-muted-foreground/30">—</span>}
-                          </td>
-                          <td className="px-4 py-2.5 text-right tabular-nums text-blue-600 dark:text-blue-400">
-                            {m.income > 0 ? fmtBrl(m.income) : <span className="text-muted-foreground/30">—</span>}
-                          </td>
-                          <td className={
-                            "px-4 py-2.5 text-right tabular-nums font-medium " +
-                            (m.pnl == null ? "text-muted-foreground/50" :
-                             m.pnl >= 0    ? "text-green-600 dark:text-green-400" :
-                                             "text-red-600 dark:text-red-400")
-                          }>
-                            {m.pnl != null ? `${m.pnl >= 0 ? "+" : ""}${fmtBrl(m.pnl)}` : "—"}
-                          </td>
-                          <td className={
-                            "px-4 py-2.5 text-right tabular-nums font-semibold " +
-                            (!hasReturn ? "text-muted-foreground/50" :
-                             m.returnPct! >= 0 ? "text-green-600 dark:text-green-400" :
-                                                 "text-red-600 dark:text-red-400")
-                          }>
-                            {hasReturn ? fmtPct(m.returnPct!) : "—"}
-                          </td>
-                          <td className={
-                            "px-4 py-2.5 text-right tabular-nums " +
-                            (m.cumulativeReturnPct == null ? "text-muted-foreground/50" :
-                             m.cumulativeReturnPct >= 0    ? "text-green-600 dark:text-green-400" :
-                                                             "text-red-600 dark:text-red-400")
-                          }>
-                            {m.cumulativeReturnPct != null ? fmtPct(m.cumulativeReturnPct) : "—"}
-                          </td>
-                          <td className={
-                            "px-4 py-2.5 text-right tabular-nums " +
-                            (m.twrCumulativeReturnPct == null ? "text-muted-foreground/50" :
-                             m.twrCumulativeReturnPct >= 0    ? "text-amber-600 dark:text-amber-400" :
-                                                                "text-red-600 dark:text-red-400")
-                          }>
-                            {m.twrCumulativeReturnPct != null ? fmtPct(m.twrCumulativeReturnPct) : "—"}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                </tbody>
-                <tfoot>
-                  <tr className="border-t-2 bg-muted/30 font-semibold">
-                    <td className="px-4 py-2.5 text-sm">YTD Total</td>
-                    <td className="px-4 py-2.5 text-right tabular-nums text-sm">
-                      {ytd?.currentBalance != null ? fmtBrl(ytd.currentBalance) : "—"}
-                    </td>
-                    <td />
-                    <td className="px-4 py-2.5 text-right tabular-nums text-green-700 dark:text-green-400">
-                      {ytd && ytd.contributions > 0 ? fmtBrl(ytd.contributions) : "—"}
-                    </td>
-                    <td className="px-4 py-2.5 text-right tabular-nums text-red-600 dark:text-red-400">
-                      {ytd && ytd.withdrawals > 0 ? fmtBrl(ytd.withdrawals) : "—"}
-                    </td>
-                    <td className="px-4 py-2.5 text-right tabular-nums text-blue-600 dark:text-blue-400">
-                      {ytd && ytd.income > 0 ? fmtBrl(ytd.income) : "—"}
-                    </td>
-                    <td className={
-                      "px-4 py-2.5 text-right tabular-nums text-sm " +
-                      (ytd?.pnl == null ? "" : ytd.pnl >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400")
-                    }>
-                      {ytd?.pnl != null ? `${ytd.pnl >= 0 ? "+" : ""}${fmtBrl(ytd.pnl)}` : "—"}
-                    </td>
-                    <td className={
-                      "px-4 py-2.5 text-right tabular-nums text-sm " +
-                      (ytd?.returnPct == null ? "" : ytd.returnPct >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400")
-                    }>
-                      {ytd?.returnPct != null ? fmtPct(ytd.returnPct) : "—"}
-                    </td>
-                    <td />
-                    <td className={
-                      "px-4 py-2.5 text-right tabular-nums text-sm " +
-                      (ytd?.twrReturnPct == null ? "" : ytd.twrReturnPct >= 0 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400")
-                    }>
-                      {ytd?.twrReturnPct != null ? fmtPct(ytd.twrReturnPct) : "—"}
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
+                              ) : <span className="text-[color:var(--color-lm-fg-ghost)]">—</span>}
+                            </td>
+                            <td className={`${cellBase} text-right`} style={{
+                              color:      m.contributions > 0 ? LM.gain      : LM.fgGhost,
+                              background: m.contributions > 0 ? LM.gainSoft  : "transparent",
+                            }}>
+                              {m.contributions > 0 ? fmtBrl(m.contributions) : "—"}
+                            </td>
+                            <td className={`${cellBase} text-right`} style={{
+                              color:      m.withdrawals > 0 ? LM.loss      : LM.fgGhost,
+                              background: m.withdrawals > 0 ? LM.lossSoft  : "transparent",
+                            }}>
+                              {m.withdrawals > 0 ? fmtBrl(m.withdrawals) : "—"}
+                            </td>
+                            <td className={`${cellBase} text-right`} style={{ color: m.income > 0 ? LM.pending : LM.fgGhost }}>
+                              {m.income > 0 ? fmtBrl(m.income) : "—"}
+                            </td>
+                            <td className={`${cellBase} text-right`} style={{ color: m.pnl == null ? LM.fgGhost : m.pnl >= 0 ? LM.fg : LM.loss }}>
+                              {m.pnl != null ? `${m.pnl >= 0 ? "+" : ""}${fmtBrl(m.pnl)}` : "—"}
+                            </td>
+                            <td className={`${cellBase} text-right`} style={{ color: !hasReturn ? LM.fgGhost : m.returnPct! >= 0 ? LM.fg : LM.loss }}>
+                              {hasReturn ? fmtPct(m.returnPct!) : "—"}
+                            </td>
+                            <td className={`${cellBase} text-right`} style={{ color: m.cumulativeReturnPct == null ? LM.fgGhost : m.cumulativeReturnPct >= 0 ? LM.fg : LM.loss }}>
+                              {m.cumulativeReturnPct != null ? fmtPct(m.cumulativeReturnPct) : "—"}
+                            </td>
+                            <td className={`${cellBase} text-right`} style={{ color: m.twrCumulativeReturnPct == null ? LM.fgGhost : m.twrCumulativeReturnPct >= 0 ? LM.pending : LM.loss }}>
+                              {m.twrCumulativeReturnPct != null ? fmtPct(m.twrCumulativeReturnPct) : "—"}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 border-[color:var(--color-lm-border-2)] bg-[color:var(--color-lm-surface)]">
+                      <td className="px-3 py-1.5 text-left text-[10px] uppercase tracking-[1px] text-[color:var(--color-lm-fg)]">YTD Σ</td>
+                      <td className="px-3 py-1.5 text-right tabular-nums text-[color:var(--color-lm-fg)]">
+                        {ytd?.currentBalance != null ? fmtBrl(ytd.currentBalance) : "—"}
+                      </td>
+                      <td />
+                      <td className="px-3 py-1.5 text-right tabular-nums" style={{ color: LM.gain }}>
+                        {ytd && ytd.contributions > 0 ? fmtBrl(ytd.contributions) : "—"}
+                      </td>
+                      <td className="px-3 py-1.5 text-right tabular-nums" style={{ color: LM.loss }}>
+                        {ytd && ytd.withdrawals > 0 ? fmtBrl(ytd.withdrawals) : "—"}
+                      </td>
+                      <td className="px-3 py-1.5 text-right tabular-nums" style={{ color: LM.pending }}>
+                        {ytd && ytd.income > 0 ? fmtBrl(ytd.income) : "—"}
+                      </td>
+                      <td className="px-3 py-1.5 text-right tabular-nums" style={{ color: ytd?.pnl == null ? LM.fgGhost : ytd.pnl >= 0 ? LM.fg : LM.loss }}>
+                        {ytd?.pnl != null ? `${ytd.pnl >= 0 ? "+" : ""}${fmtBrl(ytd.pnl)}` : "—"}
+                      </td>
+                      <td className="px-3 py-1.5 text-right tabular-nums" style={{ color: ytd?.returnPct == null ? LM.fgGhost : ytd.returnPct >= 0 ? LM.fg : LM.loss }}>
+                        {ytd?.returnPct != null ? fmtPct(ytd.returnPct) : "—"}
+                      </td>
+                      <td />
+                      <td className="px-3 py-1.5 text-right tabular-nums" style={{ color: ytd?.twrReturnPct == null ? LM.fgGhost : ytd.twrReturnPct >= 0 ? LM.pending : LM.loss }}>
+                        {ytd?.twrReturnPct != null ? fmtPct(ytd.twrReturnPct) : "—"}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
             </div>
-          </div>
 
-          <p className="text-xs text-muted-foreground">
-            <strong>Simple Return:</strong> cumulative P&amp;L ÷ starting balance.{" "}
-            <strong>TWR (Time-Weighted Return):</strong> compounds monthly sub-period returns; contributions are assumed to be deployed at the start of the following month, matching the practice of recording balances at the beginning of each month.
-            Balances are converted to BRL using the nearest prior exchange rate.
-          </p>
+            <p className="mx-3.5 mt-3 font-mono text-[10px] leading-relaxed text-[color:var(--color-lm-fg-muted)]">
+              <span className="text-[color:var(--color-lm-fg)]">Retorno simples</span>: P&L acumulado ÷ saldo inicial.{" "}
+              <span className="text-[color:var(--color-lm-fg)]">TWR (retorno tempo-ponderado)</span>: compõe os sub-períodos mensais. Aportes considerados no início do mês seguinte. Saldos convertidos em BRL pela taxa de câmbio mais próxima.
+            </p>
 
-          {/* Portfolio composition pies */}
-          {(pieByClass.length > 0 || pieByRisk.length > 0 || pieByAccount.length > 0) && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* By asset class */}
-              {pieByClass.length > 0 && (
-                <div className="rounded-lg border bg-card p-4">
-                  <h3 className="text-sm font-semibold mb-3">Balance by Asset Class</h3>
-                  <ResponsiveContainer width="100%" height={200}>
-                    <PieChart>
-                      <Pie
-                        data={pieByClass}
-                        cx="50%"
-                        cy="50%"
-                        outerRadius={90}
-                        dataKey="value"
-                        nameKey="name"
-                        labelLine={false}
-                        label={PieSliceLabel}
-                      >
-                        {pieByClass.map((_, i) => (
-                          <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip content={<PieTooltip />} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <PieLegend data={pieByClass} total={pieClassTotal} />
-                </div>
-              )}
+            {/* ── Pie charts ────────────────────────────────────────── */}
+            {(pieByClass.length > 0 || pieByRisk.length > 0 || pieByAccount.length > 0) && (
+              <div className="grid grid-cols-1 gap-3.5 px-3.5 py-3.5 md:grid-cols-3">
+                {pieByClass.length > 0 && (
+                  <Panel>
+                    <SectionTitle>Saldo · classe</SectionTitle>
+                    <div className="p-3.5">
+                      <ResponsiveContainer width="100%" height={180}>
+                        <PieChart>
+                          <Pie
+                            data={pieByClass}
+                            cx="50%"
+                            cy="50%"
+                            outerRadius={80}
+                            dataKey="value"
+                            nameKey="name"
+                            labelLine={false}
+                            label={PieSliceLabel}
+                            stroke={LM.bg}
+                            strokeWidth={1}
+                          >
+                            {pieByClass.map((_, i) => (
+                              <Cell key={i} fill={LM_PIE[i % LM_PIE.length]} />
+                            ))}
+                          </Pie>
+                          <Tooltip content={<LedgerPieTooltip />} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                      <PieLegend data={pieByClass} total={pieClassTotal} />
+                    </div>
+                  </Panel>
+                )}
 
-              {/* By risk factor */}
-              {pieByRisk.length > 0 && (
-                <div className="rounded-lg border bg-card p-4">
-                  <h3 className="text-sm font-semibold mb-3">Balance by Risk Factor</h3>
-                  <ResponsiveContainer width="100%" height={200}>
-                    <PieChart>
-                      <Pie
-                        data={pieByRisk}
-                        cx="50%"
-                        cy="50%"
-                        outerRadius={90}
-                        dataKey="value"
-                        nameKey="name"
-                        labelLine={false}
-                        label={PieSliceLabel}
-                      >
-                        {pieByRisk.map((_, i) => (
-                          <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip content={<PieTooltip />} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <PieLegend data={pieByRisk} total={pieRiskTotal} />
-                </div>
-              )}
+                {pieByRisk.length > 0 && (
+                  <Panel>
+                    <SectionTitle>Saldo · fator de risco</SectionTitle>
+                    <div className="p-3.5">
+                      <ResponsiveContainer width="100%" height={180}>
+                        <PieChart>
+                          <Pie
+                            data={pieByRisk}
+                            cx="50%"
+                            cy="50%"
+                            outerRadius={80}
+                            dataKey="value"
+                            nameKey="name"
+                            labelLine={false}
+                            label={PieSliceLabel}
+                            stroke={LM.bg}
+                            strokeWidth={1}
+                          >
+                            {pieByRisk.map((_, i) => (
+                              <Cell key={i} fill={LM_PIE[i % LM_PIE.length]} />
+                            ))}
+                          </Pie>
+                          <Tooltip content={<LedgerPieTooltip />} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                      <PieLegend data={pieByRisk} total={pieRiskTotal} />
+                    </div>
+                  </Panel>
+                )}
 
-              {/* By account */}
-              {pieByAccount.length > 0 && (
-                <div className="rounded-lg border bg-card p-4">
-                  <h3 className="text-sm font-semibold mb-3">Balance by Account</h3>
-                  <ResponsiveContainer width="100%" height={200}>
-                    <PieChart>
-                      <Pie
-                        data={pieByAccount}
-                        cx="50%"
-                        cy="50%"
-                        outerRadius={90}
-                        dataKey="value"
-                        nameKey="name"
-                        labelLine={false}
-                        label={PieSliceLabel}
-                      >
-                        {pieByAccount.map((_, i) => (
-                          <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip content={<PieTooltip />} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <PieLegend data={pieByAccount} total={pieAccountTotal} />
-                </div>
-              )}
-            </div>
-          )}
-        </>
+                {pieByAccount.length > 0 && (
+                  <Panel>
+                    <SectionTitle>Saldo · conta</SectionTitle>
+                    <div className="p-3.5">
+                      <ResponsiveContainer width="100%" height={180}>
+                        <PieChart>
+                          <Pie
+                            data={pieByAccount}
+                            cx="50%"
+                            cy="50%"
+                            outerRadius={80}
+                            dataKey="value"
+                            nameKey="name"
+                            labelLine={false}
+                            label={PieSliceLabel}
+                            stroke={LM.bg}
+                            strokeWidth={1}
+                          >
+                            {pieByAccount.map((_, i) => (
+                              <Cell key={i} fill={LM_PIE[i % LM_PIE.length]} />
+                            ))}
+                          </Pie>
+                          <Tooltip content={<LedgerPieTooltip />} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                      <PieLegend data={pieByAccount} total={pieAccountTotal} />
+                    </div>
+                  </Panel>
+                )}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* ── Status bar ──────────────────────────────────────────────── */}
+      {data && data.assetCount > 0 && (
+        <div className="flex items-center gap-5 border-t border-[color:var(--color-lm-border-2)] bg-[color:var(--color-lm-bg)] px-3.5 py-1.5 font-mono text-[10px] tracking-[0.5px] text-[color:var(--color-lm-fg-dim)]">
+          <span>
+            {data.assetCount} ativos · {data.months.length} meses
+          </span>
+          <span className="flex-1" />
+          <span>
+            Σ aportes <span className="text-[color:var(--color-lm-gain)]">{ytd ? fmtBrl(ytd.contributions) : "—"}</span>
+          </span>
+          <span>
+            Σ resgates <span className="text-[color:var(--color-lm-loss)]">{ytd ? fmtBrl(ytd.withdrawals) : "—"}</span>
+          </span>
+          <span>
+            retorno <span className="text-[color:var(--color-lm-fg)]">{retPct != null ? fmtPct(retPct) : "—"}</span>
+          </span>
+        </div>
       )}
     </div>
   );
