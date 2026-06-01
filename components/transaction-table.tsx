@@ -37,6 +37,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { TransactionForm, type TransactionRow } from "@/components/transaction-form";
+import { RecurringForm } from "@/components/recurring-form";
 import { LinkTransferDialog, UnlinkTransferDialog } from "@/components/link-transfer-dialog";
 import { LinkRecipientDialog } from "@/components/link-recipient-dialog";
 import { SuggestCategoriesSheet } from "@/components/suggest-categories-sheet";
@@ -49,6 +50,7 @@ import {
   Package,
   PackageOpen,
   Pencil,
+  Repeat2,
   Sparkles,
   Unlink2,
   UserRound,
@@ -519,9 +521,9 @@ interface SheetState {
 // ---------------------------------------------------------------------------
 
 // chk(28) Data(88) Recipient(1fr) Notes(220) Conta(120) Cat·COA(140) CCY(44)
-// Débito(110) Crédito(110) Link(32) Stat(44) Edit(32)
+// Débito(110) Crédito(110) Link(32) Stat(44) Actions(56)
 const ROW_TEMPLATE =
-  "28px 88px minmax(160px, 1fr) 220px 120px 140px 44px 110px 110px 32px 44px 32px";
+  "28px 88px minmax(160px, 1fr) 220px 120px 140px 44px 110px 110px 32px 44px 56px";
 
 type TxRowProps = {
   row:          TransactionRow;
@@ -532,7 +534,8 @@ type TxRowProps = {
   onFlipSign:   (t: TransactionRow) => void;
   onLink:       (t: TransactionRow) => void;
   onUnlink:     (t: TransactionRow) => void;
-  onLinkRecipient: (t: TransactionRow) => void;
+  onLinkRecipient:    (t: TransactionRow) => void;
+  onCreateRecurring:  (t: TransactionRow) => void;
   stripe:       boolean;
 };
 
@@ -547,6 +550,7 @@ const TxRow = memo(
     onLink,
     onUnlink,
     onLinkRecipient,
+    onCreateRecurring,
     stripe,
   }: TxRowProps) {
     const amountNum = parseFloat(t.amount ?? "0");
@@ -727,8 +731,15 @@ const TxRow = memo(
           )}
         </div>
 
-        {/* edit */}
-        <div className="flex justify-end">
+        {/* actions */}
+        <div className="flex items-center justify-end gap-1.5">
+          <button
+            className="opacity-0 group-hover:opacity-60 hover:!opacity-100 text-[color:var(--color-lm-fg-ghost)] hover:text-[color:var(--color-lm-fg)]"
+            onClick={(e) => { e.stopPropagation(); onCreateRecurring(t); }}
+            title="Criar recorrência"
+          >
+            <Repeat2 className="h-3 w-3" />
+          </button>
           <button
             className="text-[color:var(--color-lm-fg-ghost)] hover:text-[color:var(--color-lm-fg)]"
             onClick={(e) => { e.stopPropagation(); onEdit(t); }}
@@ -750,7 +761,8 @@ const TxRow = memo(
     prev.onFlipSign === next.onFlipSign &&
     prev.onLink     === next.onLink &&
     prev.onUnlink   === next.onUnlink &&
-    prev.onLinkRecipient === next.onLinkRecipient
+    prev.onLinkRecipient   === next.onLinkRecipient &&
+    prev.onCreateRecurring === next.onCreateRecurring
 );
 
 // ---------------------------------------------------------------------------
@@ -802,6 +814,14 @@ export function TransactionTable({ initialCoa, initialFrom, initialTo, initialAc
   const [allRecipients, setAllRecipients] = useState<RecipientDetail[]>([]);
 
   const [suggestSheet, setSuggestSheet] = useState(false);
+
+  const [recurringSheet, setRecurringSheet] = useState<{
+    open: boolean;
+    prefill?: {
+      name?: string; type?: "income" | "expense"; amount?: string;
+      accountId?: string; coaCode?: string; dayOfMonth?: number;
+    };
+  }>({ open: false });
 
   // ── Data fetching ─────────────────────────────────────────────────────────
   const fetchTransactions = useCallback(() => {
@@ -903,6 +923,24 @@ export function TransactionTable({ initialCoa, initialFrom, initialTo, initialAc
   const openLinkDialog   = useCallback((t: TransactionRow) => setLinkDialog({ open: true, transaction: t }), []);
   const openUnlinkDialog = useCallback((t: TransactionRow) => setUnlinkDialog({ open: true, transaction: t }), []);
   const openLinkRecipient = useCallback((t: TransactionRow) => setLinkRecipientDialog({ open: true, transaction: t }), []);
+
+  const openCreateRecurring = useCallback((t: TransactionRow) => {
+    const amount = parseFloat(t.amount ?? "0");
+    const day = t.transactionDate
+      ? new Date(t.transactionDate).getUTCDate()
+      : undefined;
+    setRecurringSheet({
+      open: true,
+      prefill: {
+        name:      t.linkedRecipientName ?? t.recipient ?? "",
+        type:      amount < 0 ? "expense" : "income",
+        amount:    String(Math.abs(amount)),
+        accountId: t.accountId ?? "",
+        coaCode:   t.coaCode   ?? "",
+        dayOfMonth: day,
+      },
+    });
+  }, []);
 
   // ── Filter options (derived) ──────────────────────────────────────────────
   const accountOptions = useMemo(() =>
@@ -1257,6 +1295,7 @@ export function TransactionTable({ initialCoa, initialFrom, initialTo, initialAc
                     onLink={openLinkDialog}
                     onUnlink={openUnlinkDialog}
                     onLinkRecipient={openLinkRecipient}
+                    onCreateRecurring={openCreateRecurring}
                   />
                 );
               })
@@ -1297,6 +1336,39 @@ export function TransactionTable({ initialCoa, initialFrom, initialTo, initialAc
           </span>
         </span>
       </div>
+
+      {/* ── Recurring sheet ──────────────────────────────────────────────── */}
+      <Sheet open={recurringSheet.open} onOpenChange={(open) => setRecurringSheet((s) => ({ ...s, open }))}>
+        <SheetContent
+          showCloseButton={false}
+          className="!w-[440px] !max-w-[440px] border-l border-[color:var(--color-lm-border-2)] bg-[color:var(--color-lm-bg)] p-0 font-mono text-[11px] text-[color:var(--color-lm-fg)]"
+        >
+          <SheetHeader className="flex-row items-baseline gap-2.5 border-b border-[color:var(--color-lm-border-2)] px-5 py-3.5">
+            <span className="text-[color:var(--color-lm-pending)]">↻</span>
+            <div className="flex-1">
+              <SheetTitle className="font-mono text-[14px] font-normal tracking-[-0.2px] text-[color:var(--color-lm-fg)]">
+                Nova recorrência
+              </SheetTitle>
+              <div className="mt-0.5 text-[10px] text-[color:var(--color-lm-fg-dim)]">
+                pré-preenchido a partir da transação · ajuste se necessário
+              </div>
+            </div>
+            <button
+              onClick={() => setRecurringSheet((s) => ({ ...s, open: false }))}
+              className="text-[10px] text-[color:var(--color-lm-fg-dim)]"
+            >
+              ESC
+            </button>
+          </SheetHeader>
+          <div className="flex-1 overflow-y-auto px-5 py-4">
+            <RecurringForm
+              key={recurringSheet.open ? JSON.stringify(recurringSheet.prefill) : "closed"}
+              prefill={recurringSheet.prefill}
+              onSuccess={() => setRecurringSheet((s) => ({ ...s, open: false }))}
+            />
+          </div>
+        </SheetContent>
+      </Sheet>
 
       {/* ── Sheet (drawer) ────────────────────────────────────────────────── */}
       <Sheet open={sheet.open} onOpenChange={(open) => setSheet((s) => ({ ...s, open }))}>

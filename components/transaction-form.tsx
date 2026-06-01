@@ -220,6 +220,18 @@ export function TransactionForm({ transaction, onSuccess, onCreated, onSaved, on
     return () => clearTimeout(timer);
   }, [isEdit, transactionDate, accountId, amount]);
 
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+        e.preventDefault();
+        handleSubmit();
+      }
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transactionDate, accountId, amount, coaCode, notes, recipient, assetId, accountingDate, currency, dupeConfirmed, saving]);
+
   async function handleSubmit() {
     setError(null);
     setSaving(true);
@@ -590,7 +602,7 @@ export function TransactionForm({ transaction, onSuccess, onCreated, onSaved, on
           <span className="text-[color:var(--color-lm-fg-ghost)]">próximo</span>
         </span>
         <span>
-          <kbd className="mr-1 border border-[color:var(--color-lm-border-2)] bg-[color:var(--color-lm-surface)] px-1 text-[9px]">⏎</kbd>
+          <kbd className="mr-1 border border-[color:var(--color-lm-border-2)] bg-[color:var(--color-lm-surface)] px-1 text-[9px]">⌘⏎</kbd>
           <span className="text-[color:var(--color-lm-fg-ghost)]">salvar</span>
         </span>
       </div>

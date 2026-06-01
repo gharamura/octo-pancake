@@ -32,6 +32,10 @@ const NAV: NavGroup[] = [
     { code: "CT", label: "Contas",        href: "/accounts",     hot: "C" },
     { code: "BL", label: "Saldos",        href: "/balances",     hot: "B" },
   ]},
+  { g: "FLOW", items: [
+    { code: "CF", label: "Cash Flow",     href: "/cash-flow",             hot: "F" },
+    { code: "RE", label: "Recorrentes",   href: "/cash-flow/recurring" },
+  ]},
   { g: "INV", items: [
     { code: "AT", label: "Ativos",        href: "/assets",       hot: "A" },
     { code: "AB", label: "Posições",      href: "/assets/balances" },

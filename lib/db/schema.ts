@@ -1,4 +1,4 @@
-import { AnyPgColumn, boolean, date, index, integer, numeric, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { AnyPgColumn, boolean, date, index, integer, numeric, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
   id: text("id")
@@ -354,3 +354,53 @@ export const exchangeRates = pgTable(
 
 export type ExchangeRate    = typeof exchangeRates.$inferSelect;
 export type NewExchangeRate = typeof exchangeRates.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Recurring Transactions
+// Templates for repeating cash-flow entries (bills, salary, etc.).
+// accountId, coaCode, recipientId are soft references.
+// ---------------------------------------------------------------------------
+
+export const recurringTransactions = pgTable("recurringTransactions", {
+  id:          uuid("id").defaultRandom().primaryKey(),
+  name:        text("name").notNull(),
+  amount:      numeric("amount", { precision: 20, scale: 2 }).notNull(),
+  type:        text("type", { enum: ["income", "expense"] }).notNull(),
+  accountId:   text("accountId").notNull(),
+  coaCode:     text("coaCode"),
+  recipientId: text("recipientId"),
+  dayOfMonth:  integer("dayOfMonth").notNull(),
+  currency:    text("currency").notNull().default("BRL"),
+  isActive:    boolean("isActive").notNull().default(true),
+  notes:       text("notes"),
+  createdAt:   timestamp("createdAt").notNull().defaultNow(),
+  updatedAt:   timestamp("updatedAt").notNull().defaultNow(),
+});
+
+export type RecurringTransaction    = typeof recurringTransactions.$inferSelect;
+export type NewRecurringTransaction = typeof recurringTransactions.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Spot (one-off estimate) transactions for cash flow simulation.
+// Scoped to a specific year + month + day. Not recurring.
+// ---------------------------------------------------------------------------
+
+export const cashFlowSpots = pgTable("cashFlowSpots", {
+  id:         uuid("id").defaultRandom().primaryKey(),
+  name:       text("name").notNull(),
+  amount:     numeric("amount", { precision: 20, scale: 2 }).notNull(),
+  type:       text("type", { enum: ["income", "expense"] }).notNull(),
+  accountId:  text("accountId").notNull(),
+  coaCode:    text("coaCode"),
+  year:       integer("year").notNull(),
+  month:      integer("month").notNull(),
+  dayOfMonth: integer("dayOfMonth").notNull(),
+  currency:   text("currency").notNull().default("BRL"),
+  pairId:     uuid("pairId"),   // shared UUID for transfer pairs; null = standalone spot
+  notes:      text("notes"),
+  createdAt:  timestamp("createdAt").notNull().defaultNow(),
+  updatedAt:  timestamp("updatedAt").notNull().defaultNow(),
+});
+
+export type CashFlowSpot    = typeof cashFlowSpots.$inferSelect;
+export type NewCashFlowSpot = typeof cashFlowSpots.$inferInsert;
