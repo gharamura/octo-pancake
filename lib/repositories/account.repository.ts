@@ -23,7 +23,7 @@ export class AccountRepository {
 
   async update(
     id: string,
-    data: Partial<Pick<FinancialAccount, "name" | "type" | "institution" | "owner" | "accountNumber" | "openingBalance" | "notes" | "isActive">>
+    data: Partial<Pick<FinancialAccount, "name" | "type" | "institution" | "owner" | "accountNumber" | "currency" | "openingBalance" | "notes" | "isActive">>
   ): Promise<FinancialAccount | null> {
     const [account] = await db
       .update(financialAccounts)

@@ -128,7 +128,7 @@ function AddSpotPopover({
     e.preventDefault();
     if (!name || !amount || !accountId) return;
     setSaving(true);
-    await onAdd({ name, type, amount, accountId, year, month, dayOfMonth: day, currency: "BRL", coaCode: null, notes: null });
+    await onAdd({ name, type, amount, accountId, year, month, dayOfMonth: day, currency: "BRL", coaCode: null, notes: null, pairId: null });
     reset();
     setOpen(false);
   }
@@ -299,7 +299,7 @@ function AddSpotSheet({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
-    await onAdd({ name, type, amount, accountId, year, month, dayOfMonth: parseInt(dayOfMonth, 10), currency: "BRL", coaCode: null, notes: null });
+    await onAdd({ name, type, amount, accountId, year, month, dayOfMonth: parseInt(dayOfMonth, 10), currency: "BRL", coaCode: null, notes: null, pairId: null });
     setName(""); setAmount(""); setType("expense"); setDayOfMonth("1"); setSaving(false);
     onOpenChange(false);
   }

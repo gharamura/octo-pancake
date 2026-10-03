@@ -232,7 +232,7 @@ export async function GET(req: Request) {
     }
     if (minYM === Infinity) {
       // No data at all
-      return NextResponse.json({ from: null, to: null, assetCount: 0, startBalance: null, months: [], assetDetails: [], ytd: { currentBalance: null, contributions: 0, withdrawals: 0, income: 0, pnl: null, returnPct: null } } satisfies PerformanceResponse);
+      return NextResponse.json({ from: null, to: null, assetCount: 0, startBalance: null, months: [], assetDetails: [], ytd: { currentBalance: null, contributions: 0, withdrawals: 0, income: 0, pnl: null, returnPct: null, twrReturnPct: null } } satisfies PerformanceResponse);
     }
     actualFromYear  = Math.floor(minYM / 100);
     actualFromMonth = minYM % 100;

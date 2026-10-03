@@ -398,8 +398,8 @@ export function AssetTable() {
         ),
         cell: ({ row }) => {
           const name = row.depth > 0
-            ? row.original._groupAccountNames[0] ?? row.getValue("accountName")
-            : row.getValue("accountName");
+            ? row.original._groupAccountNames[0] ?? row.getValue<string | null>("accountName")
+            : row.getValue<string | null>("accountName");
           return <span className="text-muted-foreground">{name ?? "—"}</span>;
         },
       },
