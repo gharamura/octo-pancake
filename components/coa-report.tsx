@@ -11,7 +11,7 @@ import {
 import type { AccountType } from "@/lib/db/schema";
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronRight, TrendingDown, TrendingUp } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -253,9 +253,8 @@ function SectionRows({
         const isCollapsed = collapsed.has(parent.code);
         const kids = children.filter((c) => c.parentCode === parent.code);
         return (
-          <>
+          <Fragment key={parent.code}>
             <AccountRow
-              key={parent.code}
               row={parent}
               bg={bg}
               year={year}
@@ -275,7 +274,7 @@ function SectionRows({
                 onNavigate={onNavigate}
               />
             ))}
-          </>
+          </Fragment>
         );
       })}
       {orphans.map((row) => (
