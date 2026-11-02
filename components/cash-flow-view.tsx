@@ -717,9 +717,9 @@ export function CashFlowView() {
                       borderRadius: 4,
                       fontSize: 11,
                     }}
-                    formatter={(value: number | undefined, name: string | undefined) => [
-                      fmt.format(value ?? 0),
-                      accNameMap.get(name ?? "") ?? (name ?? ""),
+                    formatter={(value, name) => [
+                      fmt.format(Number(value ?? 0)),
+                      accNameMap.get(String(name ?? "")) ?? String(name ?? ""),
                     ]}
                     labelFormatter={(label) => `Day ${label}`}
                   />
